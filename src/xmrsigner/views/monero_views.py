@@ -71,7 +71,7 @@ class MoneroSelectSeedView(View):
                     seed.fingerprint,
                     False,
                     seed.type == SeedType.POLYSEED,
-                    seed.isLegacy
+                    seed.is_legacy
                 )
             )
         button_data.append(self.SCAN_SEED)
