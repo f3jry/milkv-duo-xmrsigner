@@ -550,7 +550,7 @@ class ImportOutputsView(View):
 
     def run(self):
         try:
-            num_imported = self.seed.importOutputs(self.controller.outputs)
+            num_imported = self.seed.wallet.importOutputs(self.controller.outputs)
             if int(num_imported) == 0:  # we have a zero balance
                 if self.loading_screen:
                     self.loading_screen.stop()
