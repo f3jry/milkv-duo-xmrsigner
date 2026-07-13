@@ -511,6 +511,7 @@ class ExportKeyImagesView(View):
             self.run_screen(WarningScreen, title='Key Images Export', text='Error on exporting key images from the wallet', status_headline='Failed!', status_color='red')
             return Destination(BackStackView)
         try:
+            print(f'key_image({type(key_image)}): {key_image[:100]}...{key_image[-20:]}')
             self.run_screen(
                 QRDisplayScreen,
                 qr_encoder=MoneroKeyImageQrEncoder(key_image, self.controller.settings.get_value(Setting.QR_DENSITY))

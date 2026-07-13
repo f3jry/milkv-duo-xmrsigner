@@ -731,7 +731,6 @@ class QRDisplayScreen(BaseScreen):
             # brightness setting.
             while self.keep_running:
                 # convert the self.qr_brightness integer (31-255) into hex triplets
-                print(f'qr_brightness: {self.qr_brightness.cur_count}')
                 hex_color = (hex(self.qr_brightness.cur_count).split('x')[1]) * 3
                 image = self.qr_encoder.next_part_image(240, 240, border=2, background_color=hex_color)
 
