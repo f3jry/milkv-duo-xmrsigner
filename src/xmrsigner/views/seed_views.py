@@ -508,17 +508,32 @@ class ExportKeyImagesView(View):
         except Exception as e:
             print(e)
             raise e
-            self.run_screen(WarningScreen, title='Key Images Export', text='Error on exporting key images from the wallet', status_headline='Failed!', status_color='red')
+            self.run_screen(
+                WarningScreen,
+                title='Key Images Export',
+                text='Error on exporting key images from the wallet',
+                status_headline='Failed!',
+                status_color='red'
+            )
             return Destination(BackStackView)
         try:
-            print(f'key_image({type(key_image)}): {key_image[:100]}...{key_image[-20:]}')
+            print(f'key_image({type(key_image)}): {key_image[:50]}...{key_image[-20:]}({len(key_image)})')
             self.run_screen(
                 QRDisplayScreen,
-                qr_encoder=MoneroKeyImageQrEncoder(key_image, self.controller.settings.get_value(Setting.QR_DENSITY))
+                qr_encoder=MoneroKeyImageQrEncoder(
+                    key_image,
+                    self.controller.settings.get_value(Setting.QR_DENSITY)
+                )
             )
         except Exception as e:
             raise e
-            self.run_screen(WarningScreen, title='Key Images Export', text='Error on exporting key images from the wallet', status_headline='Failed!', status_color='red')
+            self.run_screen(
+                WarningScreen,
+                title='Key Images Export',
+                text='Error on exporting key images from the wallet',
+                status_headline='Failed!',
+                status_color='red'
+            )
             return Destination(BackStackView)
         return Destination(MainMenuView)
 
@@ -667,6 +682,7 @@ class SeedOptionsView(View):
             # Force BACK to always return to the Main Menu if in a flow
             return Destination(BackStackView if self.controller.resume_main_flow is None else MainMenuView)
         if button_data[selected_menu_num] == self.SCAN:
+            self.controller.selected_seed = self.seed
             from xmrsigner.views.scan_views import ScanUR2View
             return Destination(ScanUR2View)
         if button_data[selected_menu_num] == self.EXPLORER:

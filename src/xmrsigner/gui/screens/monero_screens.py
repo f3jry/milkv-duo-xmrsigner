@@ -649,52 +649,6 @@ class TxAddressDetailsScreen(ButtonListScreen):
 
 
 @dataclass
-class TxChangeDetailsScreen(ButtonListScreen):
-    title: str = 'Your Change'
-    amount: int = 0
-    address: str = None
-    fingerprint: str = None
-    is_polyseed: bool = False
-    is_legacy: bool = False
-    is_change_derivation_path: bool = True
-    derivation_path_addr_index: int = 0
-    is_change_addr_verified: bool = False
-
-    def __post_init__(self):
-        # Customize defaults
-        self.is_bottom_list = True
-        super().__post_init__()
-        self.components.append(XmrAmount(
-            total_atomic_units=self.amount,
-            screen_y=self.top_nav.height + Padding.COMPONENT,
-            font_size=20
-        ))
-        self.components.append(FormattedAddress(
-            screen_y=self.components[-1].screen_y + self.components[-1].height + Padding.COMPONENT,
-            address=self.address,
-            max_lines=1,
-        ))
-        screen_y = self.components[-1].screen_y + self.components[-1].height + 2 * Padding.COMPONENT
-        self.components.append(IconTextLine(
-            icon_name=IconConstants.FINGERPRINT,
-            icon_color=Theme.FINGERPRINT_POLYSEED_COLOR if self.is_polyseed else Theme.FINGERPRINT_MONERO_SEED_COLOR if not self.is_legacy else Theme.FINGERPRINT_LEGACY_SEED_COLOR,
-            value_text=f"""{self.fingerprint}: {"Change" if self.is_change_derivation_path else "Addr"} #{self.derivation_path_addr_index}""",
-            is_text_centered=False,
-            screen_x=Padding.EDGE,
-            screen_y=screen_y,
-        ))
-        if self.is_change_addr_verified:
-            self.components.append(IconTextLine(
-                icon_name=IconConstants.SUCCESS,
-                icon_color=Theme.SUCCESS_COLOR,
-                value_text="Address verified!",
-                is_text_centered=False,
-                screen_x=Padding.EDGE,
-                screen_y=self.components[-1].screen_y + self.components[-1].height + Padding.COMPONENT,
-            ))
-
-
-@dataclass
 class TxFinalizeScreen(ButtonListScreen):
 
     def __post_init__(self):

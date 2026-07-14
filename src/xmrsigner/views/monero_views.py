@@ -20,7 +20,7 @@ from xmrsigner.gui.components import (
     IconConstants
 )
 from xmrsigner.models.monero_encoder import MoneroSignedTxQrEncoder
-from xmrsigner.models.settings_definition import Setting
+from xmrsigner.models.settings_definition import Setting, Option
 from xmrsigner.models.pending_seed import (
     PendingSeed,
     PendingSeedPhrase,
@@ -30,7 +30,6 @@ from xmrsigner.gui.screens.monero_screens import (
     TxOverviewScreen,
     TxMathScreen,
     TxAddressDetailsScreen,
-    TxChangeDetailsScreen,
     TxFinalizeScreen,
     DateOrBlockHeightScreen
 )
@@ -132,7 +131,7 @@ class OverviewView(View):
 
     def run(self):
         try:
-            txd: TxDescription|None = self.seed.wallet.describeTransfer(self.controller.transaction)
+            txd: TxDescription|None = self.seed.wallet.describeTransaction(self.controller.transaction)
             # Everything is set. Stop the loading screen
             if self.loading_screen:
                 self.loading_screen.stop()
@@ -151,19 +150,19 @@ class OverviewView(View):
         # Run the overview screen
         selected_menu_num = self.run_screen(
             TxOverviewScreen,
-            spend_amount=int(txd.amount_out),
-            change_amount=int(txd.change_amount),
-            fee_amount=int(txd.fee),
-            num_inputs=txd.inputs,
-            num_self_transfer_outputs=txd.outputs,
-            num_change_outputs=txd.change_outputs,
-            destination_addresses=[str(r.address) for r in txd.recipients]
+            spend_amount=txd.amountOut,
+            change_amount=txd.change.amount if txd.change is not None else 0,
+            fee_amount=txd.fee,
+            num_inputs=1,
+            num_self_transfer_outputs=len(t.flows),
+            num_change_outputs=1 if txd.change is not None else 0,
+            destination_addresses=[str(flow.address) for flow in txd.flows]
         )
         if selected_menu_num == RET_CODE__BACK_BUTTON:
             self.controller.transaction = None
             self.controller.selected_seed = None
             return Destination(BackStackView)
-        if txd.change_amount == 0:  # TODO: make conditional: only if dire warning is enabled
+        if txd.change is None and self.settings.get_value(Setting.DIRE_WARNINGS) == Option.ENABLED:
             return Destination(NoChangeWarningView)
         return Destination(MathView)
 
@@ -202,19 +201,18 @@ class MathView(View):
         txd: TxDescription = self.controller.tx_description
         selected_menu_num = self.run_screen(
             TxMathScreen,
-            input_amount=int(txd.amount_in),
-            num_inputs=txd.inputs,
-            spend_amount=int(txd.amount_out),
-            num_recipients=len(txd.recipients),
-            fee_amount=int(txd.fee),
-            change_amount=int(txd.change_amount),
+            input_amount=txd.amountIn,
+            num_inputs=1,
+            spend_amount=txd.amountOut,
+            num_recipients=len(txd.flows),
+            fee_amount=txd.fee,
+            change_amount=txd.change.amount if txd.change is not None else 0,
         )
         if selected_menu_num == RET_CODE__BACK_BUTTON:
             return Destination(BackStackView)
-        if len(txd.recipients) > 0:
+        if len(txd.flows) > 0:
             return Destination(TxAddressDetailsView, view_args={'address_num': 0})
-        # This is a self-transfer
-        return Destination(TxChangeDetailsView, view_args={'change_address_num': 0})
+        return Destination(FinalizeView)
 
 
 class TxAddressDetailsView(View):
@@ -231,111 +229,29 @@ class TxAddressDetailsView(View):
             raise Exception('Routing error')
         txd: TxDescription = self.controller.tx_description
         title = 'Will Send'
-        if len(txd.recipients) > 1:
+        if len(txd.flows) > 1:
             title += f' (#{self.address_num + 1})'
 
-        if self.address_num < len(txd.recipients) - 1:
+        if self.address_num < len(txd.flows) - 1:
             button_data = [ButtonData('Next Recipient')]
         else:
             button_data = [ButtonData.NEXT()]
-        print(txd.recipients)
-        print(f'self.address_num: {self.address_num}')
-        print(txd.recipients[self.address_num])
+        print(f'self.address_num: {self.address_num}: {txd.flows[self.address_num].address}: {txd.flows[self.address_num].amount}}')
         selected_menu_num = self.run_screen(
             TxAddressDetailsScreen,
             title=title,
             button_data=button_data,
-            address=str(txd.recipients[self.address_num].address),
-            amount=str(txd.recipients[self.address_num].amount),
+            address=str(txd.flows[self.address_num].address),
+            amount=txd.flows[self.address_num].amount,
         )
 
         if selected_menu_num == RET_CODE__BACK_BUTTON:
             return Destination(BackStackView)
-        if self.address_num < len(txd.recipients) - 1:
+        if self.address_num < len(txd.flows) - 1:
             # Show the next receive addr
             return Destination(TxAddressDetailsView, view_args={'address_num': self.address_num + 1})
-        if txd.change_amount > 0 and False:  # TODO: 2024-07-27, decide what to do about
-            # Move on to display change
-            return Destination(TxChangeDetailsView, view_args={'change_address_num': 0})
         # There's no change output to verify. Move on to sign the Tx.
         return Destination(FinalizeView)
-
-
-class TxChangeDetailsView(View):
-
-    NEXT = ButtonData.NEXT()
-
-    def __init__(self, change_address_num):
-        super().__init__()
-        self.change_address_num = change_address_num
-        loading_screen: Optional[LoadingScreenThread] = None
-
-    def run(self):
-        if not self.controller.tx_description:
-            # Should not be able to get here
-            return Destination(MainMenuView)
-        txd: TxDescription = self.controller.tx_description
-        title = 'Self-Transfer'
-        try:
-            if is_change_derivation_path:
-                loading_screen_text = 'Verifying Change...'
-            else:
-                loading_screen_text = 'Verifying Self-Transfer...'
-            self.loading_screen = LoadingScreenThread(text=loading_screen_text)
-            self.loading_screen.start()
-            network = txd.network
-            if txd.change_addresses[self.change_address_num] == calc_address or True:  # TODO: 2024-07-27, decide to check or remove
-                is_change_addr_verified = True
-                button_data = [self.NEXT]
-        finally:
-            if self.loading_screen:
-                self.loading_screen.stop()
-        if is_change_addr_verified == False:
-            return Destination(AddressVerificationFailedView, view_args=dict(is_change=is_change_derivation_path), clear_history=True)
-        selected_menu_num = self.run_screen(
-            TxChangeDetailsScreen,
-            title=title,
-            button_data=button_data,
-            address=change_data.get('address'),
-            amount=change_data.get('amount'),
-            is_multisig=False,
-            fingerprint=seed_fingerprint,
-            derivation_path=None,
-            is_change_derivation_path=is_change_derivation_path,
-            derivation_path_addr_index=derivation_path_addr_index,
-            is_change_addr_verified=is_change_addr_verified,
-        )
-        if selected_menu_num == RET_CODE__BACK_BUTTON:
-            return Destination(BackStackView)
-        if button_data[selected_menu_num] == self.NEXT:
-            if self.change_address_num < tx_parser.num_change_outputs - 1:
-                return Destination(TxChangeDetailsView, view_args={'change_address_num': self.change_address_num + 1})
-            # There's no more change to verify. Move on to sign the Tx.
-            return Destination(FinalizeView)
-
-
-class AddressVerificationFailedView(View):
-
-    def __init__(
-            self,
-            is_change: bool = True,
-            is_multisig: bool = False
-    ):
-        super().__init__()
-        self.is_change = is_change
-
-    def run(self):
-        self.run_screen(
-            DireWarningScreen,
-            title='Suspicious Transaction',
-            status_headline='Address Verification Failed',
-            text=f'Transactions {"change" if self.is_change else "self-transfer"} address could not be generated from your seed.',
-            button_data=[ButtonData('Discard Transaction')],
-            show_back_button=False,
-        )
-        # We're done with this Tx. Route back to MainMenuView which always
-        #   clears all ephemeral data (except in-memory seeds).
-        return Destination(MainMenuView, clear_history=True)
 
 
 class FinalizeView(View):
@@ -400,20 +316,17 @@ class SigningErrorView(View):
             # Should not be able to get here
             return Destination(MainMenuView)
         txd: TxDescription = self.controller.tx_description
-        # Just a WarningScreen here; only use DireWarningScreen for true security risks.
         selected_menu_num = self.run_screen(
             WarningScreen,
             title='Transaction Error',
             status_icon_name=IconConstants.WARNING,
             status_headline='Signing Failed',
             text='Signing with this seed did not add a valid signature.',
-            button_data=[self.SELECT_DIFF_SEED],
+            button_data = [ ButtonData('Ok') ]
         )
-        # TODO: 2024-07-27, code missing here!
         if selected_menu_num == 0:
-            # clear seed selected for signing since it did not add a valid signature
             self.controller.selected_seed = None
-            return Destination(SelectSeedView, clear_history=True)
+            return Destination(MainMenuView, clear_history=True)
         if selected_menu_num == RET_CODE__BACK_BUTTON:
             return Destination(BackStackView)
 
