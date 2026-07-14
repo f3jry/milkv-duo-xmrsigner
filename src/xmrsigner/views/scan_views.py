@@ -150,7 +150,7 @@ class ScanView(View):
                     tx: bytes = self.decoder.get_tx()
                     self.controller.transaction = tx
                     if self.controller.selected_seed is not None:
-                        from xmrsigner.views.monero_views import MoneroSelectSeedView
+                        from xmrsigner.views.monero_views import OverviewView
                         return Destination(
                             OverviewView,
                             view_args={
