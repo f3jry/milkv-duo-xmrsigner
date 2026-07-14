@@ -236,7 +236,7 @@ class TxAddressDetailsView(View):
             button_data = [ButtonData('Next Recipient')]
         else:
             button_data = [ButtonData.NEXT()]
-        print(f'self.address_num: {self.address_num}: {txd.flows[self.address_num].address}: {txd.flows[self.address_num].amount}}')
+        print(f'self.address_num: {self.address_num}: {txd.flows[self.address_num].address}: {txd.flows[self.address_num].amount}')
         selected_menu_num = self.run_screen(
             TxAddressDetailsScreen,
             title=title,
