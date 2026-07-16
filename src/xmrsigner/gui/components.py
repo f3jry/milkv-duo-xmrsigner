@@ -636,7 +636,7 @@ class XmrAmount(BaseComponent):
             cur_x += text_width
             unit_text = xmr_unit
         elif denomination == XmrDenomination.ATOMIC_UNITS or \
-            (denomination == XmrDenomination.THRESHOLD and self.total_atomic_units < 10**10) or \
+            (denomination == XmrDenomination.TRESHOLD and self.total_atomic_units < 10**10) or \
                 (denomination == XmrDenomination.HYBRID and self.total_atomic_units < 10**6):
             # Draw the atomic_units side
             atomic_units_text = f"{self.total_atomic_units:,}"
