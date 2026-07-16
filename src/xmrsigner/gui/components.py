@@ -575,12 +575,11 @@ class XmrAmount(BaseComponent):
         self.total_atomic_units = int(self.total_atomic_units)
         xmr_unit = "XMR"
         atomic_units_unit = "pXMR"
-        if self.network == Network.MAIN:
-            xmr_color = Theme.MAINNET_COLOR
-        elif self.network == Network.TEST:
-            xmr_color = Theme.TESTNET_COLOR
+        xmr_color = Theme.MAINNET_COLOR.value
+        if self.network == Network.TEST:
+            xmr_color = Theme.TESTNET_COLOR.value
         elif self.network == Network.STAGE:
-            xmr_color = Theme.STAGENET_COLOR
+            xmr_color = Theme.STAGENET_COLOR.value
         digit_font = Fonts.get_font(Theme.BODY_FONT_NAME, size=self.font_size)
         smaller_digit_font = Fonts.get_font(Theme.BODY_FONT_NAME, size=self.font_size - 2)
         unit_font_size = Theme.BUTTON_FONT_SIZE + 2
@@ -588,15 +587,15 @@ class XmrAmount(BaseComponent):
         self.paste_image = Image.new(mode="RGB", size=(self.canvas_width, self.icon_size), color=Theme.BACKGROUND_COLOR)
         draw = ImageDraw.Draw(self.paste_image)
         # Render the circular Monero icon  # TODO: 2024-08-02, change to Monero icon
-        # xmr_icon = Icon(
-            # image_draw=draw,
-            # canvas=self.paste_image,
-            # icon_name=IconConstants.MONERO_ALT,
-            # icon_color=xmr_color.value,
-            # icon_size=self.icon_size,
-            # screen_x=0,
-            # screen_y=0,
-        # )
+        xmr_icon = Icon(
+            image_draw=draw,
+            canvas=self.paste_image,
+            icon_name=IconConstants.MONERO_ALT,
+            icon_color=xmr_color,
+            icon_size=self.icon_size,
+            screen_x=0,
+            screen_y=0,
+        )
         # xmr_icon.render()  # TODO: 2024-07-28, render only with Monero Logo
         cur_x = xmr_icon.width + int(Padding.COMPONENT / 4)
         print(f'denomination: {denomination}')
