@@ -154,7 +154,7 @@ class OverviewView(View):
             change_amount=txd.change.amount if txd.change is not None else 0,
             fee_amount=txd.fee,
             num_inputs=1,
-            num_self_transfer_outputs=len(t.flows),
+            num_self_transfer_outputs=len(txd.flows),
             num_change_outputs=1 if txd.change is not None else 0,
             destination_addresses=[str(flow.address) for flow in txd.flows]
         )

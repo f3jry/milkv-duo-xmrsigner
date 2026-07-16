@@ -71,7 +71,12 @@ class OpeningSplashScreen(LogoScreen):
                 )
             )
             self.renderer.show_image()
-        sleep(5)
+        # hack to load camera stack on start
+        start: int  = int(time())
+        from xmrsigner.hardware.camera import Camera
+        duration = max(5 - (int(time()) - start), 0)
+        if duration > 0:
+            sleep(duration)
 
 
 class ScreensaverScreen(LogoScreen):
