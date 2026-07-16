@@ -16,7 +16,7 @@ from PIL import (
 )
 
 from xmrsigner.helpers.pillow import get_font_size
-from xmrsigner.models.settings import Settings
+from xmrsigner.models.settings import Settings, Setting
 from xmrsigner.models.settings_definition import XmrDenomination
 from xmrsigner.models.singleton import Singleton
 from xmrsigner.resources import get as res
