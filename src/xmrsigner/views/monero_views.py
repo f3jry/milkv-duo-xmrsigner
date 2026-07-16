@@ -296,6 +296,7 @@ class SignedQRDisplayView(View):
                 self.settings.get_value(Setting.QR_DENSITY)
             )
         except Exception as e:
+            print(e)
             if self.loading_screen:
                 self.loading_screen.stop()
             return Destination(SigningErrorView)
@@ -309,7 +310,6 @@ class SignedQRDisplayView(View):
 
 class SigningErrorView(View):
 
-    SELECT_DIFF_SEED = ButtonData('Select Diff Seed')
 
     def run(self):
         if not self.controller.tx_description:
