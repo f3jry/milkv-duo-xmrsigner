@@ -288,7 +288,7 @@ class SignedQRDisplayView(View):
 
     def run(self):
         try:
-            signed_tx: bytes = self.seed.signTransaction(self.controller.transaction)
+            signed_tx: bytes = self.seed.wallet.signTransaction(self.controller.transaction)
             if not signed_tx:
                 raise Exception('No valid transaction')
             qr_encoder = MoneroSignedTxQrEncoder(
