@@ -588,15 +588,15 @@ class XmrAmount(BaseComponent):
         self.paste_image = Image.new(mode="RGB", size=(self.canvas_width, self.icon_size), color=Theme.BACKGROUND_COLOR)
         draw = ImageDraw.Draw(self.paste_image)
         # Render the circular Monero icon  # TODO: 2024-08-02, change to Monero icon
-        xmr_icon = Icon(
-            image_draw=draw,
-            canvas=self.paste_image,
-            icon_name=IconConstants.MONERO_ALT,
-            icon_color=xmr_color,
-            icon_size=self.icon_size,
-            screen_x=0,
-            screen_y=0,
-        )
+        # xmr_icon = Icon(
+            # image_draw=draw,
+            # canvas=self.paste_image,
+            # icon_name=IconConstants.MONERO_ALT,
+            # icon_color=xmr_color.value,
+            # icon_size=self.icon_size,
+            # screen_x=0,
+            # screen_y=0,
+        # )
         # xmr_icon.render()  # TODO: 2024-07-28, render only with Monero Logo
         cur_x = xmr_icon.width + int(Padding.COMPONENT / 4)
         print(f'denomination: {denomination}')
