@@ -444,7 +444,7 @@ class SettingsDefinition:
             type=Type.MULTISELECT,
             visibility=Visibility.ADVANCED,
             selection_options=ViewOnlyWalletFormat.all(),
-            default_value=[ViewOnlyWalletFormat.WALLET_URI]
+            default_value=ViewOnlyWalletFormat.all()
         ),
         SettingsEntry(
             category=Category.FEATURES,
