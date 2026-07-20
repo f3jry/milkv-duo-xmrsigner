@@ -1,3 +1,5 @@
+untrusted comment: verify with xmrsigner.pub
+RWQIrxLVA6lZvNCW1/AkcLofAcVbrSdbsiQSQ/7OGt5QC4xw826qS3GBL/iQbopehAGy2OT6wh/vNEqcAqSCGJb/9kcddIzlgwk=
 SHA256 (src/test/__init__.py) = 4121d7f83201e2faeb78eb371a2f4e699d75367899066cb832ca200d05807a6a
 SHA256 (src/test/__main__.py) = 344d07bf9c3991c6b2942586537481a43d1e87306faeeb9c5f2edbce5a8bda6c
 SHA256 (src/test/xmrsigner/helpers/monero_time.py) = e4116c6e2f25ec9bf9bdaa7cf1cca4ab4f4810a7229ca5868f15d2efbb6d0280
