@@ -15,7 +15,7 @@ clean:
 	@find src -name __pycache__ -exec rm -rf \{\} \; >&2 || true
 
 version:
-	grep VERSION src/xmrsigner/controller.py | awk -F'"' '{ print $2 }'
+	@grep VERSION src/xmrsigner/controller.py | awk -F"'" '{ print $$2 }'
 
 checksums: clean
 	@echo 'generate sha256 checksums...'
