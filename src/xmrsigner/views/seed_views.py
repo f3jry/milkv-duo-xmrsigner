@@ -319,7 +319,7 @@ class SeedFinalizeView(View):
     def run(self):
         option: Option = self.settings.get_value(Setting.POLYSEED_PASSPHRASE if self.pending_seed.type == SeedType.POLYSEED else Setting.MONERO_SEED_PASSPHRASE)
         if option == Option.DISABLED or self.pending_seed.isLegacy or self.pending_seed.passphrase != '':
-            seed = SeedJar.transferIn(self.controller.pending_seed.seed(), str(SeedJar.count() + 1))
+            seed = SeedJar.transferIn(self.controller.pending_seed.seed())
             self.controller.pending_seed = None
             return Destination(SeedOptionsView, view_args={'seed': seed}, clear_history=True)
         if option == Option.REQUIRED and self.pending_seed.passphrase == '':
@@ -336,7 +336,7 @@ class SeedFinalizeView(View):
                 button_data=button_data,
             )
             if button_data[selected_menu_num] == self.FINALIZE:
-                seed = SeedJar.transferIn(self.controller.pending_seed.seed(), str(SeedJar.count() + 1))
+                seed = SeedJar.transferIn(self.controller.pending_seed.seed())
                 self.controller.pending_seed = None
                 return Destination(SeedOptionsView, view_args={'seed': seed}, clear_history=True)
             if button_data[selected_menu_num] == self.PASSPHRASE:
@@ -451,7 +451,7 @@ class SeedReviewPassphraseView(View):
         if button_data[selected_menu_num] == self.EDIT:
             return Destination(SeedAddPassphraseView)
         if button_data[selected_menu_num] == self.DONE:
-            seed: Seed = SeedJar.transferIn(self.controller.pending_seed.seed(), str(SeedJar.count() + 1))
+            seed: Seed = SeedJar.transferIn(self.controller.pending_seed.seed())
             self.controller.pending_seed = None
             return Destination(SeedOptionsView, view_args={"seed": seed}, clear_history=True)
 
@@ -517,7 +517,6 @@ class ExportKeyImagesView(View):
             )
             return Destination(BackStackView)
         try:
-            print(f'key_image({type(key_image)}): {key_image[:50]}...{key_image[-20:]}({len(key_image)})')
             self.run_screen(
                 QRDisplayScreen,
                 qr_encoder=MoneroKeyImageQrEncoder(
@@ -535,7 +534,13 @@ class ExportKeyImagesView(View):
                 status_color='red'
             )
             return Destination(BackStackView)
-        return Destination(MainMenuView)
+        return Destination(
+            SeedOptionsView,
+            view_args={
+                'seed': self.seed
+            },
+            skip_current_view=True
+        )
 
 
 class NoOutputsImportedView(View):
@@ -551,7 +556,13 @@ class NoOutputsImportedView(View):
             text=f"Wallet {self.seed.fingerprint} has not received funds yet.",
             status_headline='No balance found!'
         )
-        return Destination(MainMenuView)  # TODO: 2024-07-27, thought: ask user if he wants to see the address explorer to tranfer funds to the wallet
+        return Destination(  # TODO: 2024-07-27, thought: ask user if he wants to see the address explorer to tranfer funds to the wallet
+            SeedOptionsView,
+            view_args={
+                'seed': self.seed
+            },
+            skip_current_view=True
+        )
 
 
 class ImportOutputsView(View):
@@ -585,7 +596,13 @@ class ImportOutputsView(View):
         if self.loading_screen:
             self.loading_screen.stop()
         self.run_screen(WarningScreen, title='Import outputs', text=f'Error on importing outputs into wallet {self.seed.fingerprint}', status_headline='Failed!', status_color='red')
-        return Destination(MainMenuView)
+        return Destination(
+            SeedOptionsView,
+            view_args={
+                'seed': self.seed
+            },
+            skip_current_view=True
+        )
 
 
 class WalletViewKeyQRView(View):
@@ -698,14 +715,20 @@ class SeedOptionsView(View):
             from xmrsigner.views.scan_views import ScanAddressView
             return Destination(ScanAddressView)
         if button_data[selected_menu_num] == self.BACKUP:
-            return Destination(SeedBackupView, view_args={"seed": self.seed})
+            return Destination(SeedBackupProtectionView, view_args={"seed": self.seed})
         if button_data[selected_menu_num] == self.CONVERT_POOLYSEED:
             if self.seed.type == SeedType.POLYSEED:
                 print('convert {self.seed}({type(self.seed)}')
-                monero_seed = SeedJar.transferIn(self.seed.moneroSeed(), str(SeedJar.count() + 1))
-                print('remove')
+                SeedJar.rename(self.seed, f'{self.seed.address.base58}-polyseed')
+                monero_seed = SeedJar.transferIn(self.seed.moneroSeed())
                 SeedJar.remove(self.seed)
-                return Destination(SeedOptionsView, view_args={"seed": monero_seed}, skip_current_view=True)
+                return Destination(
+                    SeedOptionsView,
+                    view_args={
+                        'seed': monero_seed
+                    },
+                    skip_current_view=True
+                )
             self.run_screen(
                 DireWarningScreen,
                 title='Not a Polyseed',
@@ -723,11 +746,60 @@ class SeedOptionsView(View):
             return Destination(SeedDiscardView, view_args={"seed": self.seed})
 
 
-class SeedBackupView(View):
+class SeedBackupProtectionView(View):
 
-    def __init__(self, seed: Seed):
+    def __init__(
+        self,
+        seed: Seed
+    ):
         super().__init__()
         self.seed: Seed = seed
+
+    def run(self):
+            password: str|None = None
+            passphrase: str|None = None
+            if (
+                self.seed.type == SeedType.MONERO
+                and not self.seed.isLegacy
+                and self.settings.get_value(Setting.MONERO_SEED_PASSPHRASE) != Option.DISABLED
+            ):
+                ret = self.run_screen(
+                    seed_screens.SeedAddPassphraseScreen,
+                    passphrase=self.controller.pending_seed.passphrase if self.controller.pending_seed is not None else '',
+                    title='Passphrase (optional)'
+                )
+                if ret != RET_CODE__BACK_BUTTON:
+                    passphrase = ret
+            if self.seed.type == SeedType.POLYSEED:
+                ret = self.run_screen(
+                    seed_screens.SeedAddPassphraseScreen,
+                    passphrase=self.controller.pending_seed.passphrase if self.controller.pending_seed is not None else '',
+                    title='Password (optional)'
+                )
+                if ret != RET_CODE__BACK_BUTTON:
+                    password = ret
+            return Destination(
+                SeedBackupView,
+                view_args={
+                    'seed': self.seed,
+                    'password': password,
+                    'passphrase': passphrase
+                }
+            )
+
+
+class SeedBackupView(View):
+
+    def __init__(
+        self,
+        seed: Seed,
+        password: str|None = None,
+        passphrase: str|None = None
+    ):
+        super().__init__()
+        self.seed: Seed = seed
+        self.password: str|None = password
+        self.passphrase: str|None = passphrase
 
     def run(self):
         VIEW_WORDS = ButtonData('View Seed Words').with_icon(FontAwesome.LIST)
@@ -744,14 +816,18 @@ class SeedBackupView(View):
             return Destination(
                 SeedWordsWarningView,
                 view_args={
-                    'seed': self.seed
+                    'seed': self.seed,
+                    'password': self.password,
+                    'passphrase': self.passphrase
                 }
             )
         if button_data[selected_menu_num] == EXPORT_SEEDQR:
             return Destination(
                 SeedTranscribeSeedQRFormatView,
                 view_args={
-                    'seed': self.seed
+                    'seed': self.seed,
+                    'password': self.password,
+                    'passphrase': self.passphrase
                 }
             )
 
@@ -761,15 +837,24 @@ class SeedBackupView(View):
 ****************************************************************************"""
 class SeedWordsWarningView(View):
 
-    def __init__(self, seed: Seed|None = None):
+    def __init__(
+        self,
+        seed: Seed|None = None,
+        password: str|None = None,
+        passphrase: str|None = None
+    ):
         super().__init__()
         self.seed: Seed|None = seed
+        self.password: str|None = password
+        self.passphrase: str|None = passphrase
 
     def run(self):
         destination = Destination(
             SeedWordsView,
             view_args={
                 'seed': self.seed,
+                'password': self.password,
+                'passphrase': self.passphrase,
                 'page_index': 0
             },
             skip_current_view=True,  # Prevent going BACK to WarningViews
@@ -820,7 +905,7 @@ class SeedWordsView(View):
         words_per_page = 4
         mnemonic = self.seed.phrase(
             SeedLanguage.fromCode(self.wordlist_language.value),
-            self.passphrase
+            self.passphrase if self.seed.type == SeedType.MONERO else self.password
         ).insecure().split()
         words = mnemonic[self.page_index * words_per_page:(self.page_index + 1) * words_per_page]
         button_data = []
@@ -852,6 +937,8 @@ class SeedWordsView(View):
                 SeedWordsView,
                 view_args={
                     'seed': self.seed,
+                    'password': self.password,
+                    'passphrase': self.passphrase,
                     'page_index': self.page_index + 1
                 }
             )
@@ -899,11 +986,12 @@ class SeedWordsBackupTestPromptView(View):
             )
         if button_data[selected_menu_num] == SKIP:
             if self.seed is not None:
-                seed: Seed = SeedJar.transferIn(self.seed, str(SeedJar.count() + 1))
+                if not SeedJar.contains(self.seed):
+                    self.seed = SeedJar.transferIn(self.seed)
                 return Destination(
                     SeedOptionsView,
                     view_args={
-                        'seed': seed
+                        'seed': self.seed
                     },
                     clear_history=True
                 )
@@ -1025,7 +1113,9 @@ class SeedWordsBackupTestMistakeView(View):
             return Destination(
                 SeedWordsView,
                 view_args={
-                    'seed': self.seed
+                    'seed': self.seed,
+                    'password': self.password,
+                    'passphrase': self.passphrase
                 }
             )
         if button_data[selected_menu_num] == RETRY:
@@ -1056,11 +1146,12 @@ class SeedWordsBackupTestSuccessView(View):
             button_data=[ButtonData.OK()]
         ).display()
         if self.seed is not None:
-            seed: Seed = SeedJar.transferIn(self.seed, str(SeedJar.count() + 1))
+            if not SeedJar.contains(self.seed):
+                self.seed = SeedJar.transferIn(self.seed)
             return Destination(
                 SeedOptionsView,
                 view_args={
-                    'seed': seed
+                    'seed': self.seed
                 },
                 clear_history=True
             )
@@ -1072,9 +1163,16 @@ class SeedWordsBackupTestSuccessView(View):
 ****************************************************************************"""
 class SeedTranscribeSeedQRFormatView(View):
 
-    def __init__(self, seed: Seed):
+    def __init__(
+        self,
+        seed: Seed,
+        password: str|None = None,
+        passphrase: str|None = None
+    ):
         super().__init__()
         self.seed = seed
+        self.password = password
+        self.passphrase = passphrase
 
     def run(self):
         num_modules_standard = {
@@ -1095,6 +1193,8 @@ class SeedTranscribeSeedQRFormatView(View):
                 SeedTranscribeSeedQRWarningView,
                 view_args={
                     'seed': self.seed,
+                    'password': self.password,
+                    'passphrase': self.passphrase,
                     'seedqr_format': QrType.SEED_QR,
                     'num_modules': num_modules_standard,
                 },
@@ -1118,6 +1218,8 @@ class SeedTranscribeSeedQRFormatView(View):
             SeedTranscribeSeedQRWarningView,
                 view_args={
                     'seed': self.seed,
+                    'password': self.password,
+                    'passphrase': self.passphrase,
                     'seedqr_format': seedqr_format,
                     'num_modules': num_modules,
                 }
@@ -1129,11 +1231,15 @@ class SeedTranscribeSeedQRWarningView(View):
     def __init__(
         self,
         seed: Seed,
+        password: str|None = None,
+        passphrase: str|None = None,
         seedqr_format: QrType = QrType.SEED_QR,
         num_modules: int = 29
     ):
         super().__init__()
         self.seed: Seed = seed
+        self.password: str|None = password
+        self.passphrase: str|None = passphrase
         self.seedqr_format: QrType = seedqr_format
         self.num_modules = num_modules
 
@@ -1142,6 +1248,8 @@ class SeedTranscribeSeedQRWarningView(View):
             SeedTranscribeSeedQRWholeQRView,
             view_args={
                 'seed': self.seed,
+                'password': self.password,
+                'passphrase': self.passphrase,
                 'seedqr_format': self.seedqr_format,
                 'num_modules': self.num_modules,
             },
@@ -1176,7 +1284,7 @@ class SeedTranscribeSeedQRWholeQRView(View):
         self.seed: Seed = seed
         self.password: str = password or ''
         self.passphrase: str = passphrase or ''
-        self.indices: SeedIndices = seed.indices(password=self.password)
+        self.indices: SeedIndices = seed.indices(password=self.password if seed.type == SeedType.POLYSEED else self.passphrase)
 
     def run(self):
         print(f'seed indices: {self.indices.values}')

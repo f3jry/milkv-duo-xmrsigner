@@ -203,7 +203,7 @@ class MathView(View):
             TxMathScreen,
             input_amount=txd.amountIn,
             num_inputs=1,
-            spend_amount=txd.amountOut,
+            spend_amount=sum(flow.amount for flow in txd.flows),
             num_recipients=len(txd.flows),
             fee_amount=txd.fee,
             change_amount=txd.change.amount if txd.change is not None else 0,

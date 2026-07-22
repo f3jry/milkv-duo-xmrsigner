@@ -44,7 +44,7 @@ class ViewOnlyWalletQrEncoder(BaseStaticQrEncoder):
 class ViewOnlyWalletJsonQrEncoder(ViewOnlyWalletQrEncoder):
 
     def next_part(self):
-        return f'{{"primaryAddress": "{self.address}", "privateViewKey": "{self.secret_view_key}", "restoreHeight": {self.height}}}'
+        return f'{{"primaryAddress": "{self.address}", "privateViewKey": "{self.secret_view_key}", "restoreHeight": {self.height}, "version": 0}}'
 
     def get_qr_type(self):
         return QrType.WALLET_VIEW_ONLY_JSON
