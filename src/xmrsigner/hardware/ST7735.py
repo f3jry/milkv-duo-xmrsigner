@@ -1,6 +1,8 @@
 """
-ST7735 / ST7735S 128x160 1.8" SPI TFT Display Driver for Milk-V Duo (CV1800B)
-Supports 128x160 (Portrait) and 160x128 (Landscape) with 4KB SPI buffer chunking.
+ST7735S / ST7735R 1.8" 128x160 SPI TFT Display Driver
+Specifically tailored for '128x160 1.8TFT SPI V1.1' (L07-1.8TFT-ChuMo / H1376 11-10)
+Supports offset compensation (Red/Black/Green Tab), RGB/BGR color selection,
+and Milk-V Duo (CV1800B) 4KB SPI buffer chunking.
 """
 from __future__ import annotations
 import os
@@ -20,7 +22,11 @@ except (ImportError, RuntimeError):
 
 
 class ST7735(object):
-    """Driver for 1.8 inch 128x160 SPI TFT (ST7735/ST7735S) with Milk-V Duo support."""
+    """
+    Driver for 1.8" 128x160 SPI TFT with ST7735S / ST7735R Chip-On-Glass (COG) controller.
+    Header Pins:
+      [SD_CS, SD_MOSI, SD_MISO, SD_SCK, T_IRQ, T_DO, T_DIN, T_CS, T_CLK, VCC, GND, CS, RESET, A0, SDA, SCK, LED]
+    """
 
     # ST7735 Commands
     SWRESET = 0x01
@@ -46,25 +52,51 @@ class ST7735(object):
     GMCTRN1 = 0xE1
     DISPON  = 0x29
 
-    def __init__(self, width=128, height=160, orientation=0, spi_bus=0, spi_device=0):
+    def __init__(
+        self,
+        width: int = 128,
+        height: int = 160,
+        orientation: int = 0,     # 0: Portrait (128x160), 1: Landscape (160x128)
+        tab_type: str = "black",   # "black", "red", "green" (handles pixel offsets)
+        bgr: bool = True,
+        invert: bool = False,
+        dc_pin: int = 22,         # Milk-V Duo GP4 (sysfs GPIO 448)
+        rst_pin: int = 13,        # Milk-V Duo GP3 (sysfs GPIO 511)
+        bl_pin: int = 18,         # Milk-V Duo GP2 (sysfs GPIO 510)
+        cs_pin: int = 24,         # Milk-V Duo GP5 (SPI2_CS / sysfs GPIO 431)
+        spi_bus: int = 0,
+        spi_device: int = 0
+    ):
         self.width = width
         self.height = height
-        self.orientation = orientation  # 0: Portrait (128x160), 1: Landscape (160x128)
+        self.orientation = orientation
+        self.bgr = bgr
+        self.invert = invert
+        self._dc = dc_pin
+        self._rst = rst_pin
+        self._bl = bl_pin
+        self._cs = cs_pin
+
+        # Calculate pixel offset based on panel tab type
+        if tab_type == "green":
+            self.col_offset = 2 if self.orientation == 0 else 1
+            self.row_offset = 1 if self.orientation == 0 else 2
+        elif tab_type == "red":
+            self.col_offset = 0
+            self.row_offset = 0
+        else:  # "black" (standard 1.8" 128x160)
+            self.col_offset = 0
+            self.row_offset = 0
 
         if self.orientation == 1:
             self.width, self.height = 160, 128
-
-        # Standard Milk-V Duo Pins for 1.8" TFT:
-        # DC: GP4 (GPIO 448), RST: GP3 (GPIO 511), BL: GP2 (GPIO 510)
-        self._dc = 22
-        self._rst = 13
-        self._bl = 18
 
         GPIO.setmode(GPIO.BOARD)
         GPIO.setwarnings(False)
         GPIO.setup(self._dc, GPIO.OUT)
         GPIO.setup(self._rst, GPIO.OUT)
         GPIO.setup(self._bl, GPIO.OUT)
+        GPIO.setup(self._cs, GPIO.OUT, initial=GPIO.HIGH)
         GPIO.output(self._bl, GPIO.HIGH)
 
         self._spi = None
@@ -81,16 +113,19 @@ class ST7735(object):
 
         self.init()
 
-    def command(self, cmd):
+    def command(self, cmd: int):
         GPIO.output(self._dc, GPIO.LOW)
+        GPIO.output(self._cs, GPIO.LOW)
         if self._spi:
             try:
                 self._spi.writebytes([cmd])
             except Exception:
                 pass
+        GPIO.output(self._cs, GPIO.HIGH)
 
     def data(self, val):
         GPIO.output(self._dc, GPIO.HIGH)
+        GPIO.output(self._cs, GPIO.LOW)
         if self._spi:
             try:
                 if isinstance(val, (list, bytes, bytearray)):
@@ -99,6 +134,7 @@ class ST7735(object):
                     self._spi.writebytes([val])
             except Exception:
                 pass
+        GPIO.output(self._cs, GPIO.HIGH)
 
     def _spi_write_chunked(self, data_bytes, chunk_size=4096):
         if not self._spi:
@@ -133,7 +169,7 @@ class ST7735(object):
         self.command(self.SLPOUT)
         sleep(0.12)
 
-        # Frame Rate Control
+        # Frame Rate Control (normal & idle modes)
         self.command(self.FRMCTR1)
         self.data([0x01, 0x2C, 0x2D])
         self.command(self.FRMCTR2)
@@ -145,7 +181,7 @@ class ST7735(object):
         self.command(self.INVCTR)
         self.data(0x07)
 
-        # Power Control
+        # Power Control 1-5
         self.command(self.PWCTR1)
         self.data([0xA2, 0x02, 0x84])
         self.command(self.PWCTR2)
@@ -161,18 +197,25 @@ class ST7735(object):
         self.command(self.VMCTR1)
         self.data(0x0E)
 
+        # Inversion mode
+        if self.invert:
+            self.command(self.INVON)
+        else:
+            self.command(self.INVOFF)
+
         # Color Format (16-bit RGB 5-6-5)
         self.command(self.COLMOD)
         self.data(0x05)
 
-        # Memory Access Control (Orientation / RGB Order)
+        # Memory Access Control (Orientation & BGR/RGB)
         self.command(self.MADCTL)
+        bgr_bit = 0x08 if self.bgr else 0x00
         if self.orientation == 1:
-            self.data(0xA8)  # Landscape RGB
+            self.data(0xA0 | bgr_bit)  # Landscape
         else:
-            self.data(0xC8)  # Portrait RGB
+            self.data(0xC0 | bgr_bit)  # Portrait (top-to-bottom, left-to-right)
 
-        # Gamma Correction
+        # Gamma Correction (+ / -)
         self.command(self.GMCTRP1)
         self.data([
             0x02, 0x1C, 0x07, 0x12, 0x37, 0x32, 0x29, 0x2D,
@@ -188,33 +231,38 @@ class ST7735(object):
         self.command(self.DISPON)
         sleep(0.05)
 
-    def SetWindows(self, x_start, y_start, x_end, y_end):
-        # Column address set
+    def SetWindows(self, x_start: int, y_start: int, x_end: int, y_end: int):
+        x0 = x_start + self.col_offset
+        x1 = (x_end - 1) + self.col_offset
+        y0 = y_start + self.row_offset
+        y1 = (y_end - 1) + self.row_offset
+
+        # Column address set (CASET)
         self.command(self.CASET)
-        self.data([0x00, x_start & 0xFF, 0x00, (x_end - 1) & 0xFF])
+        self.data([0x00, x0 & 0xFF, 0x00, x1 & 0xFF])
 
-        # Row address set
+        # Row address set (RASET)
         self.command(self.RASET)
-        self.data([0x00, y_start & 0xFF, 0x00, (y_end - 1) & 0xFF])
+        self.data([0x00, y0 & 0xFF, 0x00, y1 & 0xFF])
 
-        # Write to RAM
+        # RAM Write (RAMWR)
         self.command(self.RAMWR)
 
-    def ShowImage(self, image: Image.Image, x_start=0, y_start=0):
-        # If incoming image doesn't match 128x160, auto resize with antialiasing
+    def ShowImage(self, image: Image.Image, x_start: int = 0, y_start: int = 0):
         if image.size != (self.width, self.height):
             image = image.resize((self.width, self.height), Image.BILINEAR)
 
-        arr = array("H", image.convert("BGR;16").tobytes())
+        mode_str = "BGR;16" if self.bgr else "RGB;16"
+        arr = array("H", image.convert(mode_str).tobytes())
         arr.byteswap()
         pix = arr.tobytes()
 
         self.SetWindows(0, 0, self.width, self.height)
         GPIO.output(self._dc, GPIO.HIGH)
+        GPIO.output(self._cs, GPIO.LOW)
         self._spi_write_chunked(pix)
+        GPIO.output(self._cs, GPIO.HIGH)
 
-    def clear(self):
-        _buffer = bytes([0x00] * (self.width * self.height * 2))
-        self.SetWindows(0, 0, self.width, self.height)
-        GPIO.output(self._dc, GPIO.HIGH)
-        self._spi_write_chunked(_buffer)
+    def clear(self, color: tuple[int, int, int] = (0, 0, 0)):
+        img = Image.new('RGB', (self.width, self.height), color)
+        self.ShowImage(img)
