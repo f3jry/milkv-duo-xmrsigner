@@ -11,8 +11,9 @@ except (ImportError, RuntimeError):
 
 import os
 from time import sleep
-from array import array
 from PIL import Image
+
+from xmrsigner.hardware.rgb565 import to_rgb565_be
 
 
 class ST7789(object):
@@ -186,9 +187,7 @@ class ST7789(object):
         if imwidth != self.width or imheight != self.height:
             raise ValueError(f'Image must be {self.width}x{self.height}, got {imwidth}x{imheight}')
         
-        arr = array("H", image.convert("BGR;16").tobytes())
-        arr.byteswap()
-        pix = arr.tobytes()
+        pix = to_rgb565_be(image, bgr=True)
         self.SetWindows(0, 0, self.width, self.height)
         GPIO.output(self._dc, GPIO.HIGH)
         self._spi_write_chunked(pix)

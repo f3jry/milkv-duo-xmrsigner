@@ -55,10 +55,10 @@ class SeedMnemonicEntryScreen(BaseTopNavScreen):
 
         self.possible_alphabet = "abcdefghijklmnopqrstuvwxyz"
 
-        # Set up the keyboard params
-        self.keyboard_width = 128
+        # Set up the keyboard params (128px/30px on the 240px reference layout)
+        self.keyboard_width = int(self.canvas_width * 128 / 240)
         text_entry_display_y = self.top_nav.height
-        text_entry_display_height = 30
+        text_entry_display_height = int(self.canvas_height * 30 / 240)
 
         self.arrow_up_is_active = False
         self.arrow_down_is_active = False

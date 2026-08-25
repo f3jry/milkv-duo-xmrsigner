@@ -32,7 +32,7 @@ class XPT2046:
     X_MIN, X_MAX = 200, 3900
     Y_MIN, Y_MAX = 250, 3850
 
-    def __init__(self, cs_pin=26, irq_pin=24, width=128, height=160, spi_bus=0, spi_device=1):
+    def __init__(self, cs_pin=26, irq_pin=27, width=128, height=160, spi_bus=0, spi_device=1):
         self.width = width
         self.height = height
         self.cs_pin = cs_pin
@@ -90,17 +90,17 @@ class XPT2046:
             return None
 
         # Map to display resolution (128x160)
-        x = max(0, min(self.width, int((raw_x - self.X_MIN) * self.width / (self.X_MAX - self.X_MIN))))
-        y = max(0, min(self.height, int((raw_y - self.Y_MIN) * self.height / (self.Y_MAX - self.Y_MIN))))
+        x = max(0, min(self.width - 1, int((raw_x - self.X_MIN) * self.width / (self.X_MAX - self.X_MIN))))
+        y = max(0, min(self.height - 1, int((raw_y - self.Y_MIN) * self.height / (self.Y_MAX - self.Y_MIN))))
 
         self.last_x, self.last_y = x, y
         self.is_pressed = True
         self.last_touch_time = time.time()
         return (x, y)
 
-    def get_mapped_button(self) -> int | None:
+    def get_mapped_button(self, point: tuple[int, int] | None = None) -> int | None:
         """Maps on-screen touch regions to HardwareButtonsConstants."""
-        pt = self.get_touch_point()
+        pt = point if point is not None else self.get_touch_point()
         if not pt:
             return None
 

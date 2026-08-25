@@ -165,13 +165,21 @@ class TextArea(BaseComponent):
         #   fits in its bounding rect (plus accounting for edge padding) using its given
         #   font.
         # Do initial calcs without worrying about supersampling.
-        self.text_lines = reflow_text_for_width(
-            text=self.text,
-            width=self.width - 2 * self.edge_padding,
-            font_name=self.font_name,
-            font_size=self.font_size,
-            allow_text_overflow=self.allow_text_overflow,
-        )
+        # On narrow displays, shrink the font until unbreakable text fits.
+        while True:
+            try:
+                self.text_lines = reflow_text_for_width(
+                    text=self.text,
+                    width=self.width - 2 * self.edge_padding,
+                    font_name=self.font_name,
+                    font_size=self.font_size,
+                    allow_text_overflow=self.allow_text_overflow,
+                )
+                break
+            except TextDoesNotFitException:
+                if self.font_size <= 9:
+                    raise
+                self.font_size -= 1
         # Calculate the actual font height from the "baseline" anchor ("_s")
         font = Fonts.get_font(self.font_name, self.font_size)
         # Note: from the baseline anchor, `top` is a negative number while `bottom`

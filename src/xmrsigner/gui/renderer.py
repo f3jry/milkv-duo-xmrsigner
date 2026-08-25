@@ -38,8 +38,10 @@ class Renderer(ConfigurableSingleton):
         if display_type == 'ST7735' and ST7735 is not None:
             print('=> Initializing ST7735 128x160 1.8" TFT SPI Display')
             renderer.disp = ST7735(width=128, height=160)
-            renderer.canvas_width = 240  # Standard virtual canvas for crisp UI layout
-            renderer.canvas_height = 240
+            # Native-resolution canvas: UI components lay out relative to the
+            # canvas, and frames are pushed 1:1 (no distortion, no resize cost).
+            renderer.canvas_width = renderer.disp.width
+            renderer.canvas_height = renderer.disp.height
         elif ST7789 is not None:
             print('=> Initializing ST7789 240x240 Display')
             renderer.disp = ST7789()
@@ -47,8 +49,8 @@ class Renderer(ConfigurableSingleton):
             renderer.canvas_height = renderer.disp.height
         elif ST7735 is not None:
             renderer.disp = ST7735()
-            renderer.canvas_width = 240
-            renderer.canvas_height = 240
+            renderer.canvas_width = renderer.disp.width
+            renderer.canvas_height = renderer.disp.height
         else:
             # Headless fallback
             renderer.disp = None
@@ -74,7 +76,8 @@ class Renderer(ConfigurableSingleton):
                 self.canvas.paste(image)
 
             if self.disp:
-                # If physical display is 128x160, ShowImage automatically resizes with bilinear antialiasing
+                # Canvas matches the panel's native resolution; ShowImage still
+                # rescales gracefully if a mismatched image is passed in.
                 self.disp.ShowImage(self.canvas, 0, 0)
 
     def show_image_pan(self, image, start_x, start_y, end_x, end_y, rate, alpha_overlay=None):
