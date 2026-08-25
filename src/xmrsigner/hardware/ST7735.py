@@ -7,8 +7,9 @@ and Milk-V Duo (CV1800B) 4KB SPI buffer chunking.
 from __future__ import annotations
 import os
 from time import sleep
-from array import array
 from PIL import Image
+
+from xmrsigner.hardware.rgb565 import to_rgb565_be
 
 try:
     from spidev import SpiDev
@@ -250,12 +251,10 @@ class ST7735(object):
 
     def ShowImage(self, image: Image.Image, x_start: int = 0, y_start: int = 0):
         if image.size != (self.width, self.height):
-            image = image.resize((self.width, self.height), Image.BILINEAR)
+            resample = getattr(Image, "Resampling", Image).BILINEAR
+            image = image.resize((self.width, self.height), resample)
 
-        mode_str = "BGR;16" if self.bgr else "RGB;16"
-        arr = array("H", image.convert(mode_str).tobytes())
-        arr.byteswap()
-        pix = arr.tobytes()
+        pix = to_rgb565_be(image, bgr=self.bgr)
 
         self.SetWindows(0, 0, self.width, self.height)
         GPIO.output(self._dc, GPIO.HIGH)

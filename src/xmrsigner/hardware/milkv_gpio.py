@@ -57,6 +57,9 @@ MILKV_PIN_MAP = {
     22: 448,  # LCD DC
     13: 511,  # LCD RST
     18: 510,  # LCD BL
+    # 1.8" TFT V1.1 (L07-1.8TFT-ChuMo) touch controller pins
+    26: 430,  # T_CS (GP18)
+    27: 429,  # T_IRQ (GP17)
 }
 
 _mode = BOARD

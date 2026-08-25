@@ -52,7 +52,7 @@ def run_diagnostic():
             pt = touch.get_touch_point()
             if pt:
                 x, y = pt
-                btn = touch.get_mapped_button()
+                btn = touch.get_mapped_button(pt)
                 print(f"\r[TOUCH] Raw (X={x:3d}, Y={y:3d}) -> Virtual Button Code: {btn}", end="")
                 
                 # Draw dynamic touch indicator on screen

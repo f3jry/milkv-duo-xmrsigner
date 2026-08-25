@@ -10,6 +10,7 @@ from ots.enums import SeedType, Network
 from ots.seed_language import SeedLanguage
 from ots.seed_indices import SeedIndices
 from ots.address import Address
+from ots.exceptions import OtsPolyseedNoPasswordProvidedException
 from ots.crypto import (
     keccak_256,
     sc_reduce32,

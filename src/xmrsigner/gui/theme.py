@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 from .constants import (
     Color,
     FontAwesome,
@@ -83,3 +84,38 @@ class Theme:
         from xmrsigner.controller import Controller
         version = Controller.VERSION
         return f'XmrSigner Version {Controller.VERSION}\n\nYou can find the newest version always at: {cls.XMRSIGNER_UPDATE_URL}'
+
+
+def _apply_display_scale(scale: float):
+    """Scale fonts, icons, and padding for canvases smaller than the 240px
+    reference layout (e.g. the 128x160 1.8" ST7735 TFT).
+
+    Must run at import time: components bind Theme/Padding values as dataclass
+    defaults when they are first imported.
+    """
+    def s(value, floor):
+        return max(floor, int(round(value * scale)))
+
+    Theme.ICON_FONT_SIZE = s(Theme.ICON_FONT_SIZE, 12)
+    Theme.ICON_INLINE_FONT_SIZE = s(Theme.ICON_INLINE_FONT_SIZE, 13)
+    Theme.ICON_LARGE_BUTTON_SIZE = s(Theme.ICON_LARGE_BUTTON_SIZE, 20)
+    Theme.ICON_PRIMARY_SCREEN_SIZE = s(Theme.ICON_PRIMARY_SCREEN_SIZE, 28)
+    Theme.TOP_NAV_TITLE_FONT_SIZE = s(Theme.TOP_NAV_TITLE_FONT_SIZE, 12)
+    Theme.TOP_NAV_HEIGHT = s(Theme.TOP_NAV_HEIGHT, 26)
+    Theme.TOP_NAV_BUTTON_SIZE = s(Theme.TOP_NAV_BUTTON_SIZE, 18)
+    Theme.BODY_FONT_SIZE = s(Theme.BODY_FONT_SIZE, 10)
+    Theme.BODY_FONT_MIN_SIZE = s(Theme.BODY_FONT_MIN_SIZE, 9)
+    Theme.BODY_FONT_MAX_SIZE = Theme.TOP_NAV_TITLE_FONT_SIZE
+    Theme.LABEL_FONT_SIZE = Theme.BODY_FONT_MIN_SIZE
+    Theme.BUTTON_FONT_SIZE = s(Theme.BUTTON_FONT_SIZE, 10)
+    Theme.BUTTON_HEIGHT = s(Theme.BUTTON_HEIGHT, 18)
+    Padding.EDGE = s(Padding.EDGE, 4)
+    Padding.COMPONENT = s(Padding.COMPONENT, 4)
+    Padding.LIST_ITEM = s(Padding.LIST_ITEM, 2)
+    Theme.BODY_LINE_SPACING = Padding.COMPONENT
+
+
+# The 128x160 ST7735 renders at native resolution; shrink the 240px-reference
+# theme to match. Must agree with Renderer.configure_instance().
+if os.environ.get('DISPLAY_TYPE', 'ST7735').upper() == 'ST7735':
+    _apply_display_scale(128 / 240)
