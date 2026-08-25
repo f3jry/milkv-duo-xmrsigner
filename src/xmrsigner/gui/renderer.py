@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 from PIL import Image, ImageDraw
-from threading import Lock
+from threading import RLock
 
 from xmrsigner.models.singleton import ConfigurableSingleton
 
@@ -24,7 +24,7 @@ class Renderer(ConfigurableSingleton):
     canvas: Image.Image = None
     draw: ImageDraw.ImageDraw = None
     disp = None
-    lock = Lock()
+    lock = RLock()
 
     @classmethod
     def configure_instance(cls):

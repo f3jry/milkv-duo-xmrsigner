@@ -6,8 +6,13 @@ from re import search, IGNORECASE
 from numpy import array as NumpyArray
 from datetime import date
 from logging import getLogger
-from pyzbar import pyzbar
-from pyzbar.pyzbar import ZBarSymbol
+try:
+    from pyzbar import pyzbar
+    from pyzbar.pyzbar import ZBarSymbol
+except (ImportError, Exception):
+    pyzbar = None
+    class ZBarSymbol:
+        QRCODE = 64
 from xmrsigner.urtypes.xmr import (
     XmrOutput,
     XmrTxUnsigned

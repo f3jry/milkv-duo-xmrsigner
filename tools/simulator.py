@@ -3,7 +3,7 @@
 Interactive Milk-V Duo XmrSigner Device Simulator
 Supports both Web Browser UI and Pygame Native Window with:
 - ST7735 1.8" 128x160 (or ST7789 240x240) real-time display rendering
-- Virtual Hardware Joystick & Function Keys (1, 2, 3)
+- Event Queue-based virtual hardware Joystick & Function Keys (1, 2, 3)
 - Real-time Touch Screen (XPT2046) simulation via mouse clicks / taps
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import sys
 import os
 import io
 import time
-import base64
+import queue
 import threading
 import argparse
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -50,39 +50,41 @@ class SimulatedDisplay:
 
 
 class SimulatedHardwareState:
-    """Simulated state for GPIO buttons & XPT2046 touch."""
+    """Thread-safe event queue for virtual hardware keys & touch."""
     def __init__(self, width=128, height=160):
         self.width = width
         self.height = height
-        self.active_keys = set()
-        self.last_touch_pt: tuple[int, int] | None = None
-        self.touch_active = False
-        self.lock = threading.Lock()
+        self.event_queue = queue.Queue()
 
-    def press_key(self, key_code: int):
-        with self.lock:
-            self.active_keys.add(key_code)
+    def push_key(self, key_code: int):
+        self.event_queue.put(key_code)
 
-    def release_key(self, key_code: int):
-        with self.lock:
-            self.active_keys.discard(key_code)
-
-    def pulse_key(self, key_code: int, duration=0.15):
-        def _pulse():
-            self.press_key(key_code)
-            time.sleep(duration)
-            self.release_key(key_code)
-        threading.Thread(target=_pulse, daemon=True).start()
-
-    def touch_at(self, x: int, y: int, duration=0.15):
-        with self.lock:
-            self.last_touch_pt = (max(0, min(self.width - 1, x)), max(0, min(self.height - 1, y)))
-            self.touch_active = True
-        def _release():
-            time.sleep(duration)
-            with self.lock:
-                self.touch_active = False
-        threading.Thread(target=_release, daemon=True).start()
+    def touch_at(self, x: int, y: int):
+        from xmrsigner.hardware.buttons import HardwareButtonsConstants as C
+        # Coordinate mapping for 128x160:
+        # Top-Nav / Back (y < 26) -> KEY_LEFT / BACK
+        # Top quarter (26 <= y < 55) -> KEY_UP
+        # Bottom quarter (y > 135) -> KEY_DOWN (or KEY1/KEY3 on corners)
+        # Left (x < 30) -> KEY_LEFT
+        # Right (x > 98) -> KEY_RIGHT
+        # Center (30 <= x <= 98, 55 <= y <= 135) -> KEY_PRESS
+        if y < 26:
+            self.push_key(C.KEY_LEFT)
+        elif y < 55:
+            self.push_key(C.KEY_UP)
+        elif y > 135:
+            if x < 40:
+                self.push_key(C.KEY1)
+            elif x > 88:
+                self.push_key(C.KEY3)
+            else:
+                self.push_key(C.KEY_DOWN)
+        elif x < 30:
+            self.push_key(C.KEY_LEFT)
+        elif x > 98:
+            self.push_key(C.KEY_RIGHT)
+        else:
+            self.push_key(C.KEY_PRESS)
 
 
 def patch_xmrsigner_for_simulation(sim_display: SimulatedDisplay, sim_state: SimulatedHardwareState):
@@ -90,48 +92,30 @@ def patch_xmrsigner_for_simulation(sim_display: SimulatedDisplay, sim_state: Sim
     from xmrsigner.hardware.buttons import HardwareButtons, HardwareButtonsConstants
     from xmrsigner.gui.renderer import Renderer
 
-    orig_configure = Renderer.configure_instance
-
-    @classmethod
-    def patched_configure(cls):
-        orig_configure()
-        r = cls.get_instance()
-        r.disp = sim_display
-
-    Renderer.configure_instance = patched_configure
-    Renderer.configure_instance()
-
-    # Hook HardwareButtons
-    hb = HardwareButtons.get_instance()
-
-    def mock_wait_for(keys=[], check_release=True, release_keys=[]):
+    # 1. Patch HardwareButtons class methods
+    def mock_wait_for(self, keys=[], check_release=True, release_keys=[]):
         while True:
-            # Check touch
-            if sim_state.touch_active and sim_state.last_touch_pt:
-                x, y = sim_state.last_touch_pt
-                if hb.touch:
-                    mapped = hb.touch.get_mapped_button((x, y))
-                    if mapped and mapped in keys:
-                        time.sleep(0.15)
-                        return mapped
+            try:
+                key = sim_state.event_queue.get(timeout=0.03)
+                if not keys or key in keys:
+                    return key
+            except queue.Empty:
+                pass
 
-            # Check buttons
-            with sim_state.lock:
-                for k in keys:
-                    if k in sim_state.active_keys:
-                        time.sleep(0.15)
-                        return k
-            time.sleep(0.015)
+    def mock_check_for_low(self, key=None, keys=None):
+        return False
 
-    def mock_check_for_low(key=None, keys=None):
-        if key:
-            keys = [key]
-        with sim_state.lock:
-            return any(k in sim_state.active_keys for k in (keys or []))
+    HardwareButtons.wait_for = mock_wait_for
+    HardwareButtons.check_for_low = mock_check_for_low
+    HardwareButtons.has_any_input = lambda self: not sim_state.event_queue.empty()
 
-    hb.wait_for = mock_wait_for
-    hb.check_for_low = mock_check_for_low
-    hb.has_any_input = lambda: bool(sim_state.active_keys or sim_state.touch_active)
+    # 2. Patch Renderer to stream frames directly into sim_display
+    orig_show = Renderer.show_image
+    def patched_show_image(self, image=None, alpha_overlay=None, show_direct=False):
+        orig_show(self, image, alpha_overlay, show_direct)
+        sim_display.ShowImage(self.canvas)
+
+    Renderer.show_image = patched_show_image
 
 
 # =============================================================================
@@ -145,8 +129,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Milk-V Duo XmrSigner Simulator</title>
     <style>
+        * { box-sizing: border-box; }
         body {
-            background-color: #0d0f12;
+            background-color: #0b0d10;
             color: #eee;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             display: flex;
@@ -158,10 +143,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             user-select: none;
         }
         .device {
-            background: #1e2227;
-            border-radius: 28px;
-            padding: 24px 28px 28px 28px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.85), inset 0 2px 3px rgba(255,255,255,0.08);
+            background: #181b20;
+            border-radius: 30px;
+            padding: 24px 30px 30px 30px;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.9), inset 0 1px 2px rgba(255,255,255,0.12);
             border: 2px solid #2d333b;
             display: flex;
             flex-direction: column;
@@ -177,10 +162,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         .screen-bezel {
             background: #000;
-            padding: 10px;
-            border-radius: 14px;
+            padding: 12px;
+            border-radius: 16px;
             border: 2px solid #141619;
-            box-shadow: inset 0 0 12px rgba(0,0,0,0.95);
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.95);
             cursor: crosshair;
             display: flex;
             justify-content: center;
@@ -190,19 +175,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             display: block;
             image-rendering: pixelated;
             border-radius: 4px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            box-shadow: 0 0 12px rgba(0,0,0,0.7);
         }
         .controls {
             display: flex;
-            gap: 32px;
+            gap: 36px;
             margin-top: 24px;
             align-items: center;
         }
         .dpad {
             display: grid;
-            grid-template-columns: repeat(3, 46px);
-            grid-template-rows: repeat(3, 46px);
-            gap: 4px;
+            grid-template-columns: repeat(3, 50px);
+            grid-template-rows: repeat(3, 50px);
+            gap: 5px;
         }
         .action-keys {
             display: flex;
@@ -210,30 +195,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             gap: 12px;
         }
         button {
-            background: #2d333b;
+            background: #252a32;
             color: #f0f6fc;
-            border: 1px solid #444c56;
-            border-radius: 10px;
+            border: 1px solid #3d4450;
+            border-radius: 12px;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 4px 0 #181b20;
-            transition: all 0.05s ease;
-            font-size: 14px;
+            box-shadow: 0 4px 0 #121418;
+            transition: all 0.04s ease;
+            font-size: 16px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
         button:hover {
-            background: #373e47;
+            background: #323842;
         }
         button:active {
             transform: translateY(3px);
-            box-shadow: 0 1px 0 #181b20;
+            box-shadow: 0 1px 0 #121418;
             background: #ed5f00;
             color: #fff;
         }
-        .btn-center { background: #444c56; }
-        .action-btn { width: 76px; height: 38px; font-size: 12px; border-radius: 19px; }
+        .btn-center { background: #3d4450; font-size: 18px; }
+        .action-btn { width: 84px; height: 42px; font-size: 13px; border-radius: 21px; }
         .legend {
             margin-top: 24px;
             font-size: 13px;
@@ -243,36 +228,49 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         kbd {
             background: #161b22;
-            padding: 3px 7px;
-            border-radius: 5px;
+            padding: 3px 8px;
+            border-radius: 6px;
             border: 1px solid #30363d;
             color: #c9d1d9;
             font-family: monospace;
+            font-size: 12px;
+        }
+        .touch-indicator {
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: rgba(237, 95, 0, 0.7);
+            border: 2px solid #fff;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            display: none;
         }
     </style>
 </head>
 <body>
     <div class="device">
-        <div class="header-badge">Milk-V Duo (64MB) • XmrSigner</div>
-        <div class="screen-bezel">
+        <div class="header-badge">Milk-V Duo 64MB • XmrSigner</div>
+        <div class="screen-bezel" style="position: relative;">
             <img id="screen" src="/frame" width="256" height="320" alt="Display Screen">
+            <div id="touch-dot" class="touch-indicator"></div>
         </div>
         <div class="controls">
             <div class="dpad">
                 <div></div>
-                <button onmousedown="sendKey(31)" title="Up">▲</button>
+                <button id="btn-up" onclick="sendKey(31)" title="Up">▲</button>
                 <div></div>
-                <button onmousedown="sendKey(29)" title="Left">◀</button>
-                <button class="btn-center" onmousedown="sendKey(33)" title="Press / OK">●</button>
-                <button onmousedown="sendKey(37)" title="Right">▶</button>
+                <button id="btn-left" onclick="sendKey(29)" title="Left">◀</button>
+                <button id="btn-press" class="btn-center" onclick="sendKey(33)" title="Press / OK">●</button>
+                <button id="btn-right" onclick="sendKey(37)" title="Right">▶</button>
                 <div></div>
-                <button onmousedown="sendKey(35)" title="Down">▼</button>
+                <button id="btn-down" onclick="sendKey(35)" title="Down">▼</button>
                 <div></div>
             </div>
             <div class="action-keys">
-                <button class="action-btn" onmousedown="sendKey(40)">KEY 1</button>
-                <button class="action-btn" onmousedown="sendKey(38)">KEY 2</button>
-                <button class="action-btn" onmousedown="sendKey(36)">KEY 3</button>
+                <button id="btn-k1" class="action-btn" onclick="sendKey(40)">KEY 1</button>
+                <button id="btn-k2" class="action-btn" onclick="sendKey(38)">KEY 2</button>
+                <button id="btn-k3" class="action-btn" onclick="sendKey(36)">KEY 3</button>
             </div>
         </div>
     </div>
@@ -282,6 +280,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <script>
         const screen = document.getElementById('screen');
+        const touchDot = document.getElementById('touch-dot');
         let framePending = false;
 
         function refreshFrame() {
@@ -295,28 +294,37 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             };
             nextImg.onerror = () => { framePending = false; };
         }
-        setInterval(refreshFrame, 50);
+        setInterval(refreshFrame, 45);
 
         function sendKey(code) {
             fetch('/key?code=' + code, { method: 'POST' });
         }
 
-        screen.addEventListener('mousedown', (e) => {
+        screen.addEventListener('click', (e) => {
             const rect = screen.getBoundingClientRect();
-            const normX = Math.floor((e.clientX - rect.left) / rect.width * 128);
-            const normY = Math.floor((e.clientY - rect.top) / rect.height * 160);
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            // Show touch indicator
+            touchDot.style.left = (clickX + 12) + 'px';
+            touchDot.style.top = (clickY + 12) + 'px';
+            touchDot.style.display = 'block';
+            setTimeout(() => { touchDot.style.display = 'none'; }, 200);
+
+            const normX = Math.floor(clickX / rect.width * 128);
+            const normY = Math.floor(clickY / rect.height * 160);
             fetch(`/touch?x=${normX}&y=${normY}`, { method: 'POST' });
         });
 
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowUp') sendKey(31);
-            else if (e.key === 'ArrowDown') sendKey(35);
-            else if (e.key === 'ArrowLeft') sendKey(29);
-            else if (e.key === 'ArrowRight') sendKey(37);
-            else if (e.key === 'Enter' || e.key === ' ') sendKey(33);
-            else if (e.key === '1' || e.key === 'q') sendKey(40);
-            else if (e.key === '2' || e.key === 'w') sendKey(38);
-            else if (e.key === '3' || e.key === 'e' || e.key === 'Escape') sendKey(36);
+            if (e.key === 'ArrowUp') { e.preventDefault(); sendKey(31); }
+            else if (e.key === 'ArrowDown') { e.preventDefault(); sendKey(35); }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); sendKey(29); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); sendKey(37); }
+            else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sendKey(33); }
+            else if (e.key === '1' || e.key === 'q') { sendKey(40); }
+            else if (e.key === '2' || e.key === 'w') { sendKey(38); }
+            else if (e.key === '3' || e.key === 'e' || e.key === 'Escape') { sendKey(36); }
         });
     </script>
 </body>
@@ -334,7 +342,7 @@ class WebSimulatorServer:
         parent = self
         class RequestHandler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
-                pass  # suppress request logging
+                pass
 
             def do_GET(self):
                 if self.path.startswith('/frame'):
@@ -351,79 +359,22 @@ class WebSimulatorServer:
                     self.wfile.write(HTML_TEMPLATE.encode('utf-8'))
 
             def do_POST(self):
+                import urllib.parse
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 if self.path.startswith('/key'):
-                    import urllib.parse
-                    query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                     code = int(query.get('code', [33])[0])
-                    parent.state.pulse_key(code)
-                    self.send_response(200)
-                    self.end_headers()
+                    parent.state.push_key(code)
                 elif self.path.startswith('/touch'):
-                    import urllib.parse
-                    query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                     x = int(query.get('x', [64])[0])
                     y = int(query.get('y', [80])[0])
                     parent.state.touch_at(x, y)
-                    self.send_response(200)
-                    self.end_headers()
+                self.send_response(200)
+                self.send_header('Content-Length', '0')
+                self.end_headers()
 
         server = HTTPServer(('0.0.0.0', self.port), RequestHandler)
         print(f"\n[+] Interactive Web Simulator running at http://localhost:{self.port}")
         threading.Thread(target=server.serve_forever, daemon=True).start()
-
-
-# =============================================================================
-# Pygame Desktop Window Simulator
-# =============================================================================
-
-def run_pygame_window(display: SimulatedDisplay, state: SimulatedHardwareState, scale=3):
-    import pygame
-    pygame.init()
-    pygame.display.set_caption("Milk-V Duo XmrSigner Simulator (1.8\" ST7735 + Touch)")
-
-    win_w = display.width * scale
-    win_h = display.height * scale
-    screen = pygame.display.set_mode((win_w, win_h))
-    clock = pygame.time.Clock()
-
-    key_map = {
-        pygame.K_UP: 31,
-        pygame.K_DOWN: 35,
-        pygame.K_LEFT: 29,
-        pygame.K_RIGHT: 37,
-        pygame.K_RETURN: 33,
-        pygame.K_SPACE: 33,
-        pygame.K_1: 40,
-        pygame.K_2: 38,
-        pygame.K_3: 36,
-        pygame.K_ESCAPE: 36,
-    }
-
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-                os._exit(0)
-            elif event.type == pygame.KEYDOWN:
-                if event.key in key_map:
-                    state.press_key(key_map[event.key])
-            elif event.type == pygame.KEYUP:
-                if event.key in key_map:
-                    state.release_key(key_map[event.key])
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = event.pos
-                state.touch_at(mx // scale, my // scale)
-
-        # Render display frame
-        with display.lock:
-            raw_bytes = display.current_frame.tobytes()
-            surf = pygame.image.fromstring(raw_bytes, (display.width, display.height), 'RGB')
-            scaled = pygame.transform.scale(surf, (win_w, win_h))
-            screen.blit(scaled, (0, 0))
-
-        pygame.display.flip()
-        clock.tick(30)
 
 
 # =============================================================================
@@ -433,9 +384,7 @@ def run_pygame_window(display: SimulatedDisplay, state: SimulatedHardwareState, 
 def main():
     parser = argparse.ArgumentParser(description="Milk-V Duo XmrSigner Interactive Simulator")
     parser.add_argument('--display', choices=['ST7735', 'ST7789'], default='ST7735', help="Display model")
-    parser.add_argument('--web', action='store_true', help="Run Web-only simulator (no GUI window)")
     parser.add_argument('--port', type=int, default=5000, help="Web simulator port (default: 5000)")
-    parser.add_argument('--scale', type=int, default=3, help="Window scale factor")
     args = parser.parse_args()
 
     os.environ['DISPLAY_TYPE'] = args.display
@@ -450,28 +399,17 @@ def main():
 
     patch_xmrsigner_for_simulation(sim_display, sim_state)
 
-    # Start Web Server
     web_server = WebSimulatorServer(sim_display, sim_state, port=args.port)
     web_server.start()
 
-    # Start Controller App in background thread
     from xmrsigner.controller import Controller
     controller = Controller.get_instance()
 
     app_thread = threading.Thread(target=controller.start, daemon=True)
     app_thread.start()
 
-    # If Pygame available and not forced web-only, run Pygame window on main thread
-    if not args.web:
-        try:
-            run_pygame_window(sim_display, sim_state, scale=args.scale)
-        except Exception as e:
-            print(f"[!] Pygame window could not be opened ({e}). Falling back to Web Simulator.")
-            while True:
-                time.sleep(1)
-    else:
-        while True:
-            time.sleep(1)
+    while True:
+        time.sleep(1)
 
 
 if __name__ == '__main__':

@@ -164,8 +164,7 @@ class TextArea(BaseComponent):
         # We have to figure out if and where to make line breaks in the text so that it
         #   fits in its bounding rect (plus accounting for edge padding) using its given
         #   font.
-        # Do initial calcs without worrying about supersampling.
-        # On narrow displays, shrink the font until unbreakable text fits.
+        # Shrink font until both width and height fit within target rect
         while True:
             try:
                 self.text_lines = reflow_text_for_width(
@@ -175,47 +174,39 @@ class TextArea(BaseComponent):
                     font_size=self.font_size,
                     allow_text_overflow=self.allow_text_overflow,
                 )
-                break
             except TextDoesNotFitException:
-                if self.font_size <= 9:
-                    raise
+                if self.font_size <= 8:
+                    if not self.allow_text_overflow:
+                        raise
+                    break
                 self.font_size -= 1
-        # Calculate the actual font height from the "baseline" anchor ("_s")
-        font = Fonts.get_font(self.font_name, self.font_size)
-        # Note: from the baseline anchor, `top` is a negative number while `bottom`
-        # conveys the height of the pixels that rendered below the baseline, if any
-        # (e.g. "py" in "python").
-        (left, top, right, bottom) = font.getbbox(self.text, anchor="ls")
-        self.text_height_above_baseline = -1 * top
-        self.text_height_below_baseline = bottom
-        # Initialize the text rendering relative to the baseline
-        self.text_y = self.text_height_above_baseline
-        # Other components, like IconTextLine will need to know how wide the actual
-        # rendered text will be, separate from the TextArea's defined overall `width`.
-        self.text_width = max(line["text_width"] for line in self.text_lines)
-        # Calculate the actual height
-        if len(self.text_lines) == 1:
-            total_text_height = self.text_height_above_baseline
-            if not self.height_ignores_below_baseline:
-                total_text_height += self.text_height_below_baseline
-        else:
-            # Multiply for the number of lines plus the spacer
-            total_text_height = self.text_height_above_baseline * len(self.text_lines) + self.line_spacing * (len(self.text_lines) - 1)
-            if not self.height_ignores_below_baseline and findall(f"[gjpqy]", self.text_lines[-1]["text"]):
-                # Last line has at least one char that dips below baseline
-                total_text_height += self.text_height_below_baseline
+                continue
+
+            font = Fonts.get_font(self.font_name, self.font_size)
+            (left, top, right, bottom) = font.getbbox(self.text, anchor="ls")
+            self.text_height_above_baseline = -1 * top
+            self.text_height_below_baseline = bottom
+            self.text_y = self.text_height_above_baseline
+            self.text_width = max(line["text_width"] for line in self.text_lines)
+
+            if len(self.text_lines) == 1:
+                total_text_height = self.text_height_above_baseline
+                if not self.height_ignores_below_baseline:
+                    total_text_height += self.text_height_below_baseline
+            else:
+                total_text_height = self.text_height_above_baseline * len(self.text_lines) + self.line_spacing * (len(self.text_lines) - 1)
+                if not self.height_ignores_below_baseline and findall(r"[gjpqy]", self.text_lines[-1]["text"]):
+                    total_text_height += self.text_height_below_baseline
+
+            if self.height is not None and total_text_height > self.height and self.font_size > 8 and not self.allow_text_overflow:
+                self.font_size -= 1
+                continue
+            break
+
         if self.height is None:
-            # Autoscale height to text lines
             self.height = total_text_height
         else:
-            if total_text_height > self.height:
-                if not self.allow_text_overflow:
-                    raise TextDoesNotFitException(f"Text cannot fit in target rect with this font/size\n\ttotal_text_height: {total_text_height} | self.height: {self.height}")
-                else:
-                    # Just let it render off the edge, but preserve the top portion
-                    pass
-            else:
-                # Vertically center the text's starting point
+            if total_text_height <= self.height:
                 self.text_y += int(self.height - total_text_height) / 2
 
     def render(self) -> None:
