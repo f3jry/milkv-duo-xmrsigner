@@ -1,3 +1,4 @@
+from __future__ import annotations
 from ots.address import Address
 from ots.seed import SeedIndices
 

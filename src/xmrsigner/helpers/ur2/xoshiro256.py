@@ -1,3 +1,4 @@
+from __future__ import annotations
 #
 # xoshiro256.py
 #

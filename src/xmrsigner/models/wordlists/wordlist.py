@@ -1,3 +1,4 @@
+from __future__ import annotations
 class Wordlist:
     code: str
     name: str

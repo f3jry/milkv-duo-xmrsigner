@@ -1,3 +1,4 @@
+from __future__ import annotations
 from json import load, dump, dumps
 from os import path, remove, fsync
 from platform import uname

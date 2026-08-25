@@ -1,3 +1,4 @@
+from __future__ import annotations
 from xmrsigner.gui.button_data import ButtonData
 from time import sleep, time_ns, time
 from dataclasses import dataclass

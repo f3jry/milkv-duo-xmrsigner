@@ -1,3 +1,4 @@
+from __future__ import annotations
 from xmrsigner.models.base_encoder import (
     BaseQrEncoder,
     BaseStaticQrEncoder

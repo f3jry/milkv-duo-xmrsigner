@@ -1,3 +1,4 @@
+from __future__ import annotations
 from unittest import TestCase
 
 from xmrsigner.helpers.monero_time import MoneroTime, NetData, TestData, StageData

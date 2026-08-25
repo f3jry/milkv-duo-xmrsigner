@@ -1,3 +1,4 @@
+from __future__ import annotations
 from xmrsigner.models.qr_type import QrType
 from xmrsigner.models.settings_definition import QrDensity
 from xmrsigner.models.base_encoder import BaseQrEncoder

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from ots.enums import SeedType
 from ots.address import Address
 

@@ -1,4 +1,12 @@
-from enum import StrEnum
+from __future__ import annotations
+
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+    class StrEnum(str, Enum):
+        pass
+
 
 class Color(StrEnum):
 
@@ -28,15 +36,15 @@ class Color(StrEnum):
 
     @property
     def r(self) -> int:
-        return int.from_bytes(bytes.fromhex(self.value[1:3]))
+        return int.from_bytes(bytes.fromhex(self.value[1:3]), 'big')
 
     @property
     def g(self) -> int:
-        return int.from_bytes(bytes.fromhex(self.value[3:5]))
+        return int.from_bytes(bytes.fromhex(self.value[3:5]), 'big')
 
     @property
     def b(self) -> int:
-        return int.from_bytes(bytes.fromhex(self.value[5:7]))
+        return int.from_bytes(bytes.fromhex(self.value[5:7]), 'big')
 
 
 class Padding:
@@ -149,8 +157,8 @@ class Icon:
     PASSPHRASE = '\ue91a'
 
     # Misc icons
-    MONERO = '\ue91b'  # TODO: don't need BTC, need XMR glyph is still Bitcoin
-    MONERO_ALT = '\ue91c'  # TODO: don't need BTC, need XMR glyph is still Bitcoin
+    MONERO = '\ue91b'
+    MONERO_ALT = '\ue91c'
     BRIGHTNESS = '\ue91d'
     MICROSD = '\ue91e'
     QRCODE = '\ue91f'

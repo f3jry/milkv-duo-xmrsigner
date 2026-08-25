@@ -1,51 +1,91 @@
-from spidev import SpiDev
-import RPi.GPIO as GPIO
+from __future__ import annotations
+try:
+    from spidev import SpiDev
+except ImportError:
+    SpiDev = None
+
+try:
+    import RPi.GPIO as GPIO
+except (ImportError, RuntimeError):
+    from xmrsigner.hardware import milkv_gpio as GPIO
+
+import os
 from time import sleep
 from array import array
 from PIL import Image
 
 
 class ST7789(object):
-    """class for ST7789  240*240 1.3inch OLED displays."""
+    """class for ST7789 240*240 1.3inch OLED/LCD displays on Milk-V Duo and Raspberry Pi."""
 
-    def __init__(self):
+    def __init__(self, spi_bus=0, spi_device=0):
         self.width = 240
         self.height = 240
 
-        #Initialize DC RST pin
+        # Standard Pins for Waveshare 1.3inch LCD HAT
         self._dc = 22
         self._rst = 13
         self._bl = 18
 
         GPIO.setmode(GPIO.BOARD)
         GPIO.setwarnings(False)
-        GPIO.setup(self._dc,GPIO.OUT)
-        GPIO.setup(self._rst,GPIO.OUT)
-        GPIO.setup(self._bl,GPIO.OUT)
+        GPIO.setup(self._dc, GPIO.OUT)
+        GPIO.setup(self._rst, GPIO.OUT)
+        GPIO.setup(self._bl, GPIO.OUT)
         GPIO.output(self._bl, GPIO.HIGH)
 
-        #Initialize SPI
-        self._spi = SpiDev(0, 0)
-        self._spi.max_speed_hz = 40000000
-
+        self._spi = None
+        if SpiDev is not None:
+            # Check possible SPI devices on Milk-V Duo or Pi
+            for bus, dev in [(spi_bus, spi_device), (0, 0), (2, 0), (1, 0)]:
+                spidev_path = f"/dev/spidev{bus}.{dev}"
+                if os.path.exists(spidev_path):
+                    try:
+                        self._spi = SpiDev(bus, dev)
+                        self._spi.max_speed_hz = 40000000
+                        break
+                    except Exception:
+                        pass
+        
         self.init()
 
-
-    """    Write register address and data     """
     def command(self, cmd):
         GPIO.output(self._dc, GPIO.LOW)
-        self._spi.writebytes([cmd])
+        if self._spi:
+            try:
+                self._spi.writebytes([cmd])
+            except Exception:
+                pass
 
     def data(self, val):
         GPIO.output(self._dc, GPIO.HIGH)
-        self._spi.writebytes([val])
+        if self._spi:
+            try:
+                self._spi.writebytes([val])
+            except Exception:
+                pass
+
+    def _spi_write_chunked(self, data_bytes, chunk_size=4096):
+        """Milk-V Duo CV1800B SPI FIFO requires chunked transfers to prevent buffer overflow."""
+        if not self._spi:
+            return
+        total = len(data_bytes)
+        for offset in range(0, total, chunk_size):
+            chunk = data_bytes[offset:offset + chunk_size]
+            try:
+                if hasattr(self._spi, 'writebytes2'):
+                    self._spi.writebytes2(chunk)
+                else:
+                    self._spi.writebytes(list(chunk))
+            except Exception:
+                pass
 
     def init(self):
-        """Initialize dispaly"""
+        """Initialize display"""
         self.reset()
 
         self.command(0x36)
-        self.data(0x70)                 #self.data(0x00)
+        self.data(0x70)
 
         self.command(0x3A)
         self.data(0x05)
@@ -119,48 +159,42 @@ class ST7789(object):
 
     def reset(self):
         """Reset the display"""
-        GPIO.output(self._rst,GPIO.HIGH)
+        GPIO.output(self._rst, GPIO.HIGH)
         sleep(0.01)
-        GPIO.output(self._rst,GPIO.LOW)
+        GPIO.output(self._rst, GPIO.LOW)
         sleep(0.01)
-        GPIO.output(self._rst,GPIO.HIGH)
+        GPIO.output(self._rst, GPIO.HIGH)
         sleep(0.01)
 
     def SetWindows(self, x_start, y_start, x_end, y_end):
-        #set the X coordinates
         self.command(0x2A)
-        self.data(0x00)               #Set the horizontal starting point to the high octet
-        self.data(x_start & 0xff)      #Set the horizontal starting point to the low octet
-        self.data(0x00)               #Set the horizontal end to the high octet
-        self.data((x_end - 1) & 0xff) #Set the horizontal end to the low octet
+        self.data(0x00)
+        self.data(x_start & 0xff)
+        self.data(0x00)
+        self.data((x_end - 1) & 0xff)
 
-        #set the Y coordinates
         self.command(0x2B)
         self.data(0x00)
-        self.data((y_start & 0xff))
+        self.data(y_start & 0xff)
         self.data(0x00)
-        self.data((y_end - 1) & 0xff )
+        self.data((y_end - 1) & 0xff)
 
         self.command(0x2C)
 
-    def ShowImage(self,image: Image.Image,x_start,y_start):
-        """Set buffer to value of Python Imaging Library image."""
-        """Write display buffer to physical display"""
+    def ShowImage(self, image: Image.Image, x_start=0, y_start=0):
         imwidth, imheight = image.size
         if imwidth != self.width or imheight != self.height:
-            raise ValueError('Image must be same dimensions as display \
-                ({0}x{1}).' .format(self.width, self.height))
-        # convert 24-bit RGB-8:8:8 to gBRG-3:5:5:3; then per-pixel byteswap to 16-bit RGB-5:6:5^M
+            raise ValueError(f'Image must be {self.width}x{self.height}, got {imwidth}x{imheight}')
+        
         arr = array("H", image.convert("BGR;16").tobytes())
         arr.byteswap()
         pix = arr.tobytes()
-        self.SetWindows ( 0, 0, self.width, self.height)
-        GPIO.output(self._dc,GPIO.HIGH)
-        self._spi.writebytes2(pix)
+        self.SetWindows(0, 0, self.width, self.height)
+        GPIO.output(self._dc, GPIO.HIGH)
+        self._spi_write_chunked(pix)
 
     def clear(self):
-        """Clear contents of image buffer"""
-        _buffer = [0xff]*(self.width * self.height * 2)
-        self.SetWindows ( 0, 0, self.width, self.height)
-        GPIO.output(self._dc,GPIO.HIGH)
-        self._spi.writebytes2(_buffer)
+        _buffer = bytes([0xff] * (self.width * self.height * 2))
+        self.SetWindows(0, 0, self.width, self.height)
+        GPIO.output(self._dc, GPIO.HIGH)
+        self._spi_write_chunked(_buffer)

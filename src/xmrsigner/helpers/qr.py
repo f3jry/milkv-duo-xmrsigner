@@ -1,3 +1,4 @@
+from __future__ import annotations
 from xmrsigner.gui.components import Theme
 from qrcode import QRCode
 from qrcode.constants import ERROR_CORRECT_L

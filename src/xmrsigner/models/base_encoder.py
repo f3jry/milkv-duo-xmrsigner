@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from xmrsigner.helpers.qr import Qr
 from xmrsigner.models.settings_definition import QrDensity

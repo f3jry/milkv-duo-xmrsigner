@@ -1,3 +1,4 @@
+from __future__ import annotations
 from xmrsigner.gui.constants import Padding
 from xmrsigner.gui.components import (
     Theme,

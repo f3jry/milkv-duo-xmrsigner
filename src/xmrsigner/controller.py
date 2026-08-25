@@ -1,3 +1,4 @@
+from __future__ import annotations
 from ots.ots import Ots
 from ots.seed_jar import SeedJar
 from ots.transaction import TxDescription

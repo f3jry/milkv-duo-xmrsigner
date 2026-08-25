@@ -1,3 +1,4 @@
+from __future__ import annotations
 try:
     import picamera2
     from xmrsigner.hardware.picamera2.pivideostream import PiVideoStream2

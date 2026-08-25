@@ -1,3 +1,4 @@
+from __future__ import annotations
 from os import path, remove, mkfifo
 from time import sleep
 

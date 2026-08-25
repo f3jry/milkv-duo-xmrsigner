@@ -1,3 +1,4 @@
+from __future__ import annotations
 from io import BytesIO
 from numpy import ndarray as NumpyArray
 from picamera import PiCamera

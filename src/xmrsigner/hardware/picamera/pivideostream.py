@@ -1,3 +1,4 @@
+from __future__ import annotations
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 from threading import Thread

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from random import uniform, choice
 from time import time, sleep
 from PIL import Image

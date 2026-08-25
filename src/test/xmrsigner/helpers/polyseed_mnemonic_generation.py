@@ -1,3 +1,4 @@
+from __future__ import annotations
 from unittest import TestCase
 from xmrsigner.helpers.entropy import DiceEntropy
 from xmrsigner.helpers.polyseed_mnemonic_generation import generate_mnemonic_from_bytes

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from PIL import ImageFont
 from PIL import __version__ as pil_version
 

@@ -1,0 +1,28 @@
+name: OpenHands Agent Automation
+
+on:
+  issues:
+    types: [labeled]
+  pull_request_target:
+    types: [labeled]
+
+jobs:
+  openhands:
+    if: github.event.label.name == 'fix-me' || github.event.label.name == 'openhands'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run OpenHands Resolver
+        uses: all-hands-ai/openhands-resolver@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          llm_api_key: ${{ secrets.LLM_API_KEY }}
+          llm_model: "glm-5"
+          llm_base_url: "https://open.bigmodel.cn/api/paas/v4"

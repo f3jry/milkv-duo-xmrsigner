@@ -1,3 +1,4 @@
+from __future__ import annotations
 # TODO: remove after migration to OTS
 
 class SeedWordIndex:

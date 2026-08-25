@@ -1,3 +1,4 @@
+from __future__ import annotations
 #
 # random_sampler.py
 #

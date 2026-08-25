@@ -1,3 +1,4 @@
+from __future__ import annotations
 from lzma import decompress as lzma
 from base64 import b85decode
 from hashlib import sha256

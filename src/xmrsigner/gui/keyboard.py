@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from PIL import Image, ImageDraw, ImageFont
 from xmrsigner.helpers.pillow import get_font_size

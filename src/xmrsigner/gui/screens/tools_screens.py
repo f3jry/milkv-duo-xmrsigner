@@ -1,3 +1,4 @@
+from __future__ import annotations
 from time import sleep
 from dataclasses import dataclass
 from PIL.Image import Image

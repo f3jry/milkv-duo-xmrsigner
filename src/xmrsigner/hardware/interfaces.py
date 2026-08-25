@@ -1,3 +1,4 @@
+from __future__ import annotations
 from PIL.Image import Image
 from numpy import ndarray as NumpyArray
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .shortseed import TestShortSeed
 from .seedwordindex import TestSeedWordIndex
 from .compactseed import TestCompactSeed

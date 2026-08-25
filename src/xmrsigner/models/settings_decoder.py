@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .base_decoder import BaseSingleFrameQrDecoder
 from xmrsigner.models.qr_type import QrType
 

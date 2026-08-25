@@ -1,3 +1,4 @@
+from __future__ import annotations
 class Singleton:
 
     _instance: 'Singleton|None' = None

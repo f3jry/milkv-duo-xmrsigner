@@ -1,3 +1,4 @@
+from __future__ import annotations
 from datetime import date
 from ots.enums import SeedType, Network
 from ots.seed import Seed

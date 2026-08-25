@@ -1,3 +1,4 @@
+from __future__ import annotations
 from ots.enums import AddressType, Network
 from ots.address import Address, AddressString
 from ots.seed import (

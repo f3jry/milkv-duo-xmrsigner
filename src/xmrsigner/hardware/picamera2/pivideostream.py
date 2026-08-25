@@ -1,3 +1,4 @@
+from __future__ import annotations
 from picamera2 import Picamera2, MappedArray
 from threading import Thread
 from time import sleep
