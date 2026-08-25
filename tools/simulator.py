@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Interactive Milk-V Duo XmrSigner Device Simulator
-Supports both Pygame Native Window and Web Browser UI with:
+Supports both Web Browser UI and Pygame Native Window with:
 - ST7735 1.8" 128x160 (or ST7789 240x240) real-time display rendering
 - Virtual Hardware Joystick & Function Keys (1, 2, 3)
 - Real-time Touch Screen (XPT2046) simulation via mouse clicks / taps
@@ -88,12 +88,18 @@ class SimulatedHardwareState:
 def patch_xmrsigner_for_simulation(sim_display: SimulatedDisplay, sim_state: SimulatedHardwareState):
     """Hooks simulator display and input into XmrSigner HAL."""
     from xmrsigner.hardware.buttons import HardwareButtons, HardwareButtonsConstants
-
-    # Hook Display in Renderer
     from xmrsigner.gui.renderer import Renderer
+
+    orig_configure = Renderer.configure_instance
+
+    @classmethod
+    def patched_configure(cls):
+        orig_configure()
+        r = cls.get_instance()
+        r.disp = sim_display
+
+    Renderer.configure_instance = patched_configure
     Renderer.configure_instance()
-    r = Renderer.get_instance()
-    r.disp = sim_display
 
     # Hook HardwareButtons
     hb = HardwareButtons.get_instance()
@@ -106,14 +112,14 @@ def patch_xmrsigner_for_simulation(sim_display: SimulatedDisplay, sim_state: Sim
                 if hb.touch:
                     mapped = hb.touch.get_mapped_button((x, y))
                     if mapped and mapped in keys:
-                        time.sleep(0.12)
+                        time.sleep(0.15)
                         return mapped
 
             # Check buttons
             with sim_state.lock:
                 for k in keys:
                     if k in sim_state.active_keys:
-                        time.sleep(0.12)
+                        time.sleep(0.15)
                         return k
             time.sleep(0.015)
 
@@ -140,7 +146,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <title>Milk-V Duo XmrSigner Simulator</title>
     <style>
         body {
-            background-color: #121212;
+            background-color: #0d0f12;
             color: #eee;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             display: flex;
@@ -152,11 +158,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             user-select: none;
         }
         .device {
-            background: #25282c;
-            border-radius: 24px;
-            padding: 24px;
-            box-shadow: 0 16px 40px rgba(0,0,0,0.8), inset 0 2px 4px rgba(255,255,255,0.1);
-            border: 2px solid #383c44;
+            background: #1e2227;
+            border-radius: 28px;
+            padding: 24px 28px 28px 28px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.85), inset 0 2px 3px rgba(255,255,255,0.08);
+            border: 2px solid #2d333b;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -164,81 +170,90 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .header-badge {
             font-size: 11px;
             font-weight: 700;
-            letter-spacing: 1.5px;
+            letter-spacing: 2px;
             color: #ed5f00;
-            margin-bottom: 14px;
+            margin-bottom: 16px;
             text-transform: uppercase;
         }
         .screen-bezel {
             background: #000;
             padding: 10px;
-            border-radius: 12px;
-            border: 2px solid #1a1a1a;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.9);
+            border-radius: 14px;
+            border: 2px solid #141619;
+            box-shadow: inset 0 0 12px rgba(0,0,0,0.95);
             cursor: crosshair;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
         #screen {
             display: block;
             image-rendering: pixelated;
             border-radius: 4px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
         .controls {
             display: flex;
-            gap: 28px;
+            gap: 32px;
             margin-top: 24px;
             align-items: center;
         }
         .dpad {
             display: grid;
-            grid-template-columns: repeat(3, 44px);
-            grid-template-rows: repeat(3, 44px);
+            grid-template-columns: repeat(3, 46px);
+            grid-template-rows: repeat(3, 46px);
             gap: 4px;
         }
         .action-keys {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
         }
         button {
-            background: #3a3f47;
-            color: #fff;
-            border: none;
-            border-radius: 8px;
+            background: #2d333b;
+            color: #f0f6fc;
+            border: 1px solid #444c56;
+            border-radius: 10px;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 4px 0 #1e2126;
+            box-shadow: 0 4px 0 #181b20;
             transition: all 0.05s ease;
             font-size: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
+        button:hover {
+            background: #373e47;
+        }
         button:active {
             transform: translateY(3px);
-            box-shadow: 0 1px 0 #1e2126;
+            box-shadow: 0 1px 0 #181b20;
             background: #ed5f00;
+            color: #fff;
         }
-        .btn-center { background: #4f5660; }
-        .action-btn { width: 70px; height: 38px; font-size: 12px; border-radius: 19px; }
+        .btn-center { background: #444c56; }
+        .action-btn { width: 76px; height: 38px; font-size: 12px; border-radius: 19px; }
         .legend {
-            margin-top: 20px;
-            font-size: 12px;
-            color: #777;
+            margin-top: 24px;
+            font-size: 13px;
+            color: #8b949e;
             line-height: 1.6;
             text-align: center;
         }
         kbd {
-            background: #222;
-            padding: 2px 6px;
-            border-radius: 4px;
-            border: 1px solid #444;
-            color: #ccc;
+            background: #161b22;
+            padding: 3px 7px;
+            border-radius: 5px;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            font-family: monospace;
         }
     </style>
 </head>
 <body>
     <div class="device">
-        <div class="header-badge">Milk-V Duo 64MB • XmrSigner</div>
+        <div class="header-badge">Milk-V Duo (64MB) • XmrSigner</div>
         <div class="screen-bezel">
             <img id="screen" src="/frame" width="256" height="320" alt="Display Screen">
         </div>
@@ -262,7 +277,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
     </div>
     <div class="legend">
-        <b>Keyboard Controls:</b> <kbd>▲</kbd> <kbd>▼</kbd> <kbd>◀</kbd> <kbd>▶</kbd> Navigation | <kbd>Enter</kbd> / <kbd>Space</kbd> Select | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> Keys | <kbd>Click</kbd> Screen Touch
+        <b>Controls:</b> <kbd>▲</kbd> <kbd>▼</kbd> <kbd>◀</kbd> <kbd>▶</kbd> Navigate | <kbd>Enter</kbd> / <kbd>Space</kbd> Select | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> Function Keys | <kbd>Touch</kbd> Click on screen
     </div>
 
     <script>
@@ -280,7 +295,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             };
             nextImg.onerror = () => { framePending = false; };
         }
-        setInterval(refreshFrame, 60);
+        setInterval(refreshFrame, 50);
 
         function sendKey(code) {
             fetch('/key?code=' + code, { method: 'POST' });
