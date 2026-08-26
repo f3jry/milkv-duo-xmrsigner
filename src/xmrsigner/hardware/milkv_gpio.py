@@ -39,13 +39,17 @@ RPI_INFO = {
     'PROCESSOR': 'CV1800B RISC-V 64'
 }
 
-# Standard Milk-V Duo Pin to Sysfs GPIO mapping
-# Waveshare 1.3" HAT connected to Milk-V Duo header:
-# UP: GP14 (GPIO 426), DOWN: GP15 (GPIO 427), LEFT: GP16 (GPIO 428), RIGHT: GP17 (GPIO 429), PRESS: GP18 (GPIO 430)
-# KEY1: GP19 (GPIO 431), KEY2: GP20 (GPIO 432), KEY3: GP21 (GPIO 433)
-# DC: GP4 (GPIO 448), RST: GP3 (GPIO 511), BL: GP2 (GPIO 510)
+# Milk-V Duo Pin to Sysfs GPIO mapping
 MILKV_PIN_MAP = {
-    # BOARD pin numbers to Sysfs GPIO IDs
+    # DIP-40 Physical Pin Numbers -> Sysfs GPIO IDs
+    4:  510,  # GP2 (LCD BL)
+    5:  511,  # GP3 (LCD RST)
+    6:  448,  # GP4 (LCD DC)
+    7:  431,  # GP5 (SPI2_CS / LCD CS)
+    22: 429,  # GP17 (Touch T_IRQ)
+    24: 430,  # GP18 (Touch T_CS)
+
+    # Legacy RPi HAT BOARD numbers mapping:
     31: 426,  # KEY_UP
     35: 427,  # KEY_DOWN
     29: 428,  # KEY_LEFT
@@ -54,12 +58,10 @@ MILKV_PIN_MAP = {
     40: 431,  # KEY1
     38: 432,  # KEY2
     36: 433,  # KEY3
-    22: 448,  # LCD DC
-    13: 511,  # LCD RST
-    18: 510,  # LCD BL
-    # 1.8" TFT V1.1 (L07-1.8TFT-ChuMo) touch controller pins
-    26: 430,  # T_CS (GP18)
-    27: 429,  # T_IRQ (GP17)
+    18: 510,  # BL
+    13: 511,  # RST
+    26: 430,  # T_CS
+    27: 429,  # T_IRQ
 }
 
 _mode = BOARD
@@ -71,9 +73,9 @@ _term_lock = threading.Lock()
 
 
 def _get_sysfs_gpio(channel):
-    if _mode == BOARD:
-        return MILKV_PIN_MAP.get(channel, channel)
-    return channel
+    if channel > 100:
+        return channel
+    return MILKV_PIN_MAP.get(channel, channel)
 
 
 def setmode(mode):
@@ -90,86 +92,60 @@ def setup(channel, direction, pull_up_down=PUD_OFF, initial=LOW):
     gpio_num = _get_sysfs_gpio(channel)
     gpio_path = f"/sys/class/gpio/gpio{gpio_num}"
 
-    # Try exporting sysfs GPIO if running on Linux with root/gpio permissions
-    if os.path.exists("/sys/class/gpio"):
+    # Export GPIO if not already exported
+    if not os.path.exists(gpio_path):
         try:
-            if not os.path.exists(gpio_path):
-                with open("/sys/class/gpio/export", "w") as f:
-                    f.write(str(gpio_num))
-                time.sleep(0.05)
-            
-            with open(f"{gpio_path}/direction", "w") as f:
-                f.write("out" if direction == OUT else "in")
-            
-            if direction == OUT:
-                with open(f"{gpio_path}/value", "w") as f:
-                    f.write(str(initial))
-            
+            with open("/sys/class/gpio/export", "w") as f:
+                f.write(str(gpio_num))
             _gpio_exported.add(gpio_num)
         except Exception:
             pass
 
-    _term_key_state[channel] = HIGH
+    # Set Direction
+    dir_str = "out" if direction == OUT else "in"
+    try:
+        with open(f"{gpio_path}/direction", "w") as f:
+            f.write(dir_str)
+    except Exception:
+        pass
+
+    if direction == OUT:
+        output(channel, initial)
 
 
 def output(channel, value):
     gpio_num = _get_sysfs_gpio(channel)
-    gpio_path = f"/sys/class/gpio/gpio{gpio_num}/value"
-    if os.path.exists(gpio_path):
-        try:
-            with open(gpio_path, "w") as f:
-                f.write("1" if value else "0")
-        except Exception:
-            pass
+    gpio_val_path = f"/sys/class/gpio/gpio{gpio_num}/value"
+    val_str = "1" if value else "0"
+    try:
+        with open(gpio_val_path, "w") as f:
+            f.write(val_str)
+    except Exception:
+        pass
 
 
 def input(channel):
-    # Check terminal/virtual state first
-    with _term_lock:
-        if channel in _term_key_state and _term_key_state[channel] == LOW:
-            _term_key_state[channel] = HIGH  # Auto reset momentary button press
-            return LOW
-
     gpio_num = _get_sysfs_gpio(channel)
-    gpio_path = f"/sys/class/gpio/gpio{gpio_num}/value"
-    if os.path.exists(gpio_path):
-        try:
-            with open(gpio_path, "r") as f:
-                val = f.read().strip()
-                return LOW if val == "0" else HIGH
-        except Exception:
-            pass
-    return HIGH
-
-
-def add_event_detect(channel, edge, callback=None, bouncetime=None):
-    if callback:
-        _callbacks[channel] = callback
+    gpio_val_path = f"/sys/class/gpio/gpio{gpio_num}/value"
+    try:
+        with open(gpio_val_path, "r") as f:
+            v = f.read().strip()
+            return HIGH if v == "1" else LOW
+    except Exception:
+        with _term_lock:
+            return _term_key_state.get(channel, HIGH)
 
 
 def cleanup(channel=None):
-    if channel:
-        channels = [channel]
+    if channel is not None:
+        pins = [channel]
     else:
-        channels = list(_gpio_exported)
-    
-    for ch in channels:
-        gpio_num = _get_sysfs_gpio(ch)
-        if os.path.exists(f"/sys/class/gpio/gpio{gpio_num}"):
-            try:
-                with open("/sys/class/gpio/unexport", "w") as f:
-                    f.write(str(gpio_num))
-            except Exception:
-                pass
-    _gpio_exported.clear()
+        pins = list(_gpio_exported)
 
-
-# Terminal / Keyboard helper for testing and remote console control
-def inject_key_press(channel):
-    with _term_lock:
-        _term_key_state[channel] = LOW
-    if channel in _callbacks:
+    for p in pins:
+        gpio_num = _get_sysfs_gpio(p)
         try:
-            _callbacks[channel](channel)
+            with open("/sys/class/gpio/unexport", "w") as f:
+                f.write(str(gpio_num))
         except Exception:
             pass
