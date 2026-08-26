@@ -1,11 +1,16 @@
 """
 ST7735S / ST7735R 1.8" 128x160 SPI TFT Display Driver
-Tailored for Milk-V Duo (CV1800B) with 4KB SPI buffer chunking,
-hardware/software CS, and robust reset sequences.
+Tailored for Milk-V Duo (CV1800B DIP-40) soldered pinout:
+  Pin 4: GP2 (BL / Backlight)  -> GPIO 510
+  Pin 5: GP3 (RST / Reset)      -> GPIO 511
+  Pin 6: GP4 (DC / A0)          -> GPIO 448
+  Pin 7: GP5 (CS / Chip Select) -> GPIO 431 & SPI2_CS
+  Pin 9: GP6 (SDA / MOSI)       -> SPI2_SDO
+  Pin 10: GP7 (SCK / SCLK)      -> SPI2_SCK
 """
 from __future__ import annotations
 import os
-import sys
+import glob
 from time import sleep
 from PIL import Image
 
@@ -23,10 +28,7 @@ except (ImportError, RuntimeError):
 
 
 class ST7735(object):
-    """
-    Driver for 1.8" 128x160 SPI TFT with ST7735S / ST7735R controller.
-    """
-    # Commands
+    # ST7735 Commands
     SWRESET = 0x01
     SLPOUT  = 0x11
     FRMCTR1 = 0xB1
@@ -58,10 +60,10 @@ class ST7735(object):
         tab_type: str = "black",
         bgr: bool = True,
         invert: bool = False,
-        dc_pin: int = 448,        # GP4 / GPIO 448 (Physical Pin 6)
-        rst_pin: int = 511,       # GP3 / GPIO 511 (Physical Pin 5)
-        bl_pin: int = 510,        # GP2 / GPIO 510 (Physical Pin 4)
-        cs_pin: int = 431,        # GP5 / GPIO 431 (Physical Pin 7)
+        dc_pin: int = 448,    # Pin 6 / GP4
+        rst_pin: int = 511,   # Pin 5 / GP3
+        bl_pin: int = 510,    # Pin 4 / GP2
+        cs_pin: int = 431,    # Pin 7 / GP5
         spi_bus: int = 0,
         spi_device: int = 0
     ):
@@ -84,61 +86,77 @@ class ST7735(object):
         if self.orientation == 1:
             self.width, self.height = 160, 128
 
-        # GPIO setup
+        # 1. Initialize GPIOs
         GPIO.setmode(GPIO.BCM if hasattr(GPIO, 'BCM') else GPIO.BOARD)
         GPIO.setwarnings(False)
         GPIO.setup(self._dc, GPIO.OUT)
         GPIO.setup(self._rst, GPIO.OUT)
         GPIO.setup(self._bl, GPIO.OUT)
-        GPIO.setup(self._cs, GPIO.OUT, initial=GPIO.HIGH)
-        GPIO.output(self._bl, GPIO.HIGH)
+        GPIO.setup(self._cs, GPIO.OUT, initial=GPIO.LOW)
 
-        # SPI setup
-        self._spi = None
+        # Force Backlight ON and Chip Select LOW
+        GPIO.output(self._bl, GPIO.HIGH)
+        GPIO.output(self._cs, GPIO.LOW)
+
+        # 2. Setup SPI interface
+        self._spi_handlers = []
+        
+        # Method A: Python SpiDev
         if SpiDev is not None:
-            for bus, dev in [(spi_bus, spi_device), (0, 0), (2, 0), (1, 0)]:
-                spidev_path = f"/dev/spidev{bus}.{dev}"
-                if os.path.exists(spidev_path):
-                    try:
-                        self._spi = SpiDev(bus, dev)
-                        self._spi.max_speed_hz = 16000000
-                        self._spi.mode = 0
-                        break
-                    except Exception:
-                        pass
+            for b in [0, 1, 2]:
+                for d in [0, 1]:
+                    spidev_path = f"/dev/spidev{b}.{d}"
+                    if os.path.exists(spidev_path):
+                        try:
+                            spi = SpiDev()
+                            spi.open(b, d)
+                            spi.max_speed_hz = 16000000
+                            spi.mode = 0
+                            self._spi_handlers.append(('spidev', spi))
+                        except Exception:
+                            pass
+
+        # Method B: Direct file descriptors for spidev nodes
+        for spidev_path in glob.glob("/dev/spidev*"):
+            try:
+                fd = os.open(spidev_path, os.O_RDWR | os.O_NONBLOCK)
+                self._spi_handlers.append(('fd', fd))
+            except Exception:
+                pass
 
         self.init()
+
+    def _spi_write(self, data_bytes):
+        if isinstance(data_bytes, list):
+            data_bytes = bytes(data_bytes)
+        for htype, handler in self._spi_handlers:
+            try:
+                if htype == 'spidev':
+                    if hasattr(handler, 'writebytes2'):
+                        handler.writebytes2(data_bytes)
+                    else:
+                        handler.writebytes(list(data_bytes))
+                elif htype == 'fd':
+                    os.write(handler, data_bytes)
+            except Exception:
+                pass
 
     def command(self, cmd: int):
         GPIO.output(self._dc, GPIO.LOW)
         GPIO.output(self._cs, GPIO.LOW)
-        if self._spi:
-            self._spi.writebytes([cmd])
-        GPIO.output(self._cs, GPIO.HIGH)
+        self._spi_write([cmd])
 
     def data(self, val):
         GPIO.output(self._dc, GPIO.HIGH)
         GPIO.output(self._cs, GPIO.LOW)
-        if self._spi:
-            if isinstance(val, int):
-                self._spi.writebytes([val])
-            elif isinstance(val, (list, tuple, bytes, bytearray)):
-                self._spi_write_chunked(val)
-        GPIO.output(self._cs, GPIO.HIGH)
-
-    def _spi_write_chunked(self, data_bytes, chunk_size=4096):
-        if not self._spi:
-            return
-        total = len(data_bytes)
-        for offset in range(0, total, chunk_size):
-            chunk = data_bytes[offset:offset + chunk_size]
-            try:
-                if hasattr(self._spi, 'writebytes2'):
-                    self._spi.writebytes2(chunk)
-                else:
-                    self._spi.writebytes(list(chunk))
-            except Exception:
-                pass
+        if isinstance(val, int):
+            self._spi_write([val])
+        elif isinstance(val, (list, tuple, bytes, bytearray)):
+            total = len(val)
+            chunk_size = 4096
+            for offset in range(0, total, chunk_size):
+                chunk = val[offset:offset + chunk_size]
+                self._spi_write(chunk)
 
     def reset(self):
         GPIO.output(self._rst, GPIO.HIGH)
@@ -192,7 +210,7 @@ class ST7735(object):
         self.command(self.COLMOD)
         self.data(0x05)
 
-        # Memory Access Control (Orientation & BGR/RGB)
+        # Memory Access Control
         self.command(self.MADCTL)
         if self.orientation == 0:
             madctl = 0x08 if self.bgr else 0x00
@@ -229,7 +247,6 @@ class ST7735(object):
         self.command(self.RAMWR)
 
     def ShowImage(self, image: Image.Image, x_start: int = 0, y_start: int = 0):
-        """Streams a PIL Image in RGB565 to the display."""
         if image.mode != "RGB":
             image = image.convert("RGB")
         w, h = image.size
